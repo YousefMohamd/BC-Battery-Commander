@@ -249,6 +249,9 @@ echo "---"
 
 echo "Refresh Now | refresh=true"
 echo "Show Full Status... | bash=$DISPATCH param1=details terminal=false"
+echo "Sleep & Battery Report | bash=$DISPATCH param1=sleep_report terminal=false"
+echo "Save Report (silent) | bash=$DISPATCH param1=sleep_report_save terminal=false"
+echo "Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false"
 echo "Open BattOpt Logs | bash=/usr/bin/open param1=/Library/Logs/battopt/ terminal=false"
 echo "Open Actions Log | bash=$DISPATCH param1=open_actions_log terminal=false"
 echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
@@ -264,6 +267,91 @@ echo "Open BattOpt.app | bash=$DISPATCH param1=open_app terminal=false"
 echo "About BattOpt... | bash=$DISPATCH param1=about terminal=false"
 echo "---"
 
+# ============ SLEEP & POWER SECTION ============
+PSAVER_STATE=$([ -f "$HOME/.battopt-swiftbar/.power_saver" ] && echo "ON" || echo "OFF")
+POWERNAP=$(pmset -g 2>/dev/null | grep -E "^ powernap" | awk '{print $2}' | head -1)
+[ -z "$POWERNAP" ] && POWERNAP="0"
+WOMP=$(pmset -g 2>/dev/null | grep -E "^ womp" | awk '{print $2}' | head -1)
+[ -z "$WOMP" ] && WOMP="0"
+TCPKEEP=$(pmset -g 2>/dev/null | grep -E "^ tcpkeepalive" | awk '{print $2}' | head -1)
+[ -z "$TCPKEEP" ] && TCPKEEP="0"
+HIBERNATE=$(pmset -g 2>/dev/null | grep -E "^ hibernatemode" | awk '{print $2}' | head -1)
+[ -z "$HIBERNATE" ] && HIBERNATE="3"
+STANDBY_DELAY=$(pmset -g 2>/dev/null | grep -E "^ standbydelayhigh" | awk '{print $2}' | head -1)
+[ -z "$STANDBY_DELAY" ] && STANDBY_DELAY=$(pmset -g 2>/dev/null | grep -E "^ standbydelay " | awk '{print $2}' | head -1)
+[ -z "$STANDBY_DELAY" ] && STANDBY_DELAY="4200"
+STANDBY_MIN=$((STANDBY_DELAY / 60))
+
+USB_EXT=$(system_profiler SPUSBDataType 2>/dev/null | grep -c "Wireless Device" 2>/dev/null | head -1 | tr -d ' \n')
+[ -z "$USB_EXT" ] && USB_EXT=0
+case "$USB_EXT" in
+    ''|*[!0-9]*) USB_EXT=0 ;;
+esac
+
+WAKE_COUNT=$(pmset -g log 2>/dev/null | grep -cE "Wake from|DarkWake")
+[ -z "$WAKE_COUNT" ] && WAKE_COUNT=0
+
+if [ "$PSAVER_STATE" = "ON" ]; then
+    echo "💤 Sleep Report: OPTIMIZED | color=#30D158"
+else
+    echo "💤 Sleep Report: STANDARD | color=#FF9500"
+fi
+echo "-- 🔋 Battery: ${PCT}% | size=11"
+echo "-- 💚 Health: ${HEALTH}% · ${CYCLES} cycles | size=11 $GRAY"
+echo "-- 🌡️ Temperature: ${TEMP}C | size=11 $TEMP_COLOR"
+echo "-- ⚡ State: ${STATE} | size=11"
+echo "-- ---"
+if [ "$PSAVER_STATE" = "ON" ]; then
+    echo "-- ✅ Power Saver: ENABLED | size=11 color=#30D158"
+else
+    echo "-- ⚠️ Power Saver: DISABLED | size=11 color=#FF9500"
+fi
+if [ "$POWERNAP" = "0" ]; then
+    echo "-- ✅ Power Nap: OFF | size=11 color=#30D158"
+else
+    echo "-- ⚠️ Power Nap: ON | size=11 color=#FF9500"
+fi
+if [ "$WOMP" = "0" ]; then
+    echo "-- ✅ Wake on Network: OFF | size=11 color=#30D158"
+else
+    echo "-- ⚠️ Wake on Network: ON | size=11 color=#FF9500"
+fi
+if [ "$TCPKEEP" = "0" ]; then
+    echo "-- ✅ TCP Keep-Alive: OFF | size=11 color=#30D158"
+else
+    echo "-- ⚠️ TCP Keep-Alive: ON | size=11 color=#FF9500"
+fi
+if [ "$STANDBY_MIN" -le 30 ]; then
+    echo "-- ✅ Hibernate after: ${STANDBY_MIN} min | size=11 color=#30D158"
+else
+    echo "-- ⚠️ Hibernate after: ${STANDBY_MIN} min | size=11 color=#FF9500"
+fi
+echo "-- ℹ️ Hibernatemode: ${HIBERNATE} | size=11 $GRAY"
+echo "-- ---"
+echo "-- 📊 Wake events: ${WAKE_COUNT} | size=11 $GRAY"
+echo "-- 🔌 External USB: ${USB_EXT} | size=11 $GRAY"
+echo "-- ---"
+ISSUE_LIST=""
+[ "$PSAVER_STATE" = "OFF" ] && ISSUE_LIST="${ISSUE_LIST}PS off; "
+[ "$POWERNAP" != "0" ] && ISSUE_LIST="${ISSUE_LIST}PN on; "
+[ "$WOMP" != "0" ] && ISSUE_LIST="${ISSUE_LIST}WoMP on; "
+[ "$STANDBY_MIN" -gt 30 ] && ISSUE_LIST="${ISSUE_LIST}Slow hib; "
+if [ -z "$ISSUE_LIST" ]; then
+    echo "-- ✅ All systems optimized | size=11 color=#30D158"
+else
+    echo "-- ⚠️ Issues: ${ISSUE_LIST} | size=11 color=#FF9500"
+fi
+echo "-- ---"
+if [ "$PSAVER_STATE" = "ON" ]; then
+    echo "-- 🔄 Disable Power Saver | bash=$DISPATCH param1=power_saver_off terminal=false refresh=true"
+else
+    echo "-- ⚡ ENABLE Power Saver | bash=$DISPATCH param1=power_saver_on terminal=false refresh=true color=#30D158"
+fi
+echo "-- 📄 Show Full Report… | bash=$DISPATCH param1=power_saver_report terminal=false"
+echo "-- 💾 Save Report to File | bash=$DISPATCH param1=sleep_report_save terminal=false refresh=true"
+echo "-- 📂 Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false"
+
+# ============ SYSTEM RESOURCES ============
 echo "System Resources | size=11 color=#007AFF disabled=true"
 SWIFTBAR_PID=$(pgrep -x SwiftBar | head -1)
 if [ -n "$SWIFTBAR_PID" ]; then

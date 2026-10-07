@@ -503,4 +503,157 @@ OSA
         open "/Applications/BattOpt.app"
         notify "BattOpt" "Opening BattOpt Control Center"
         ;;
-esac
+    sleep_report)
+        acquire
+        REPORT="/tmp/battopt_sleep_report_$(date +%Y%m%d_%H%M).txt"
+        {
+            echo "=========================================="
+            echo "  BattOpt - Sleep & Battery Report"
+            echo "  Generated: $(date '+%Y-%m-%d %H:%M:%S')"
+            echo "=========================================="
+            echo ""
+            echo "--- BATTERY ---"
+            sudo -n "$BAT" status 2>&1 | tail -n +2
+            echo ""
+            echo "--- SMC STATE ---"
+            ioreg -rn AppleSmartBattery 2>/dev/null | grep -E '"(IsCharging|NotChargingReason|FullyCharged|ExternalChargeCapable)"'
+            echo ""
+            echo "--- POWER SETTINGS ---"
+            pmset -g | grep -E "womp|powernap|tcpkeepalive|standbydelay|standby |hibernatemode|sleep |disksleep|displaysleep"
+            echo ""
+            echo "--- WAKE EVENTS (last 24h) ---"
+            pmset -g log | grep -E "Wake from|DarkWake" | tail -30
+            echo ""
+            echo "--- WAKE REASONS SUMMARY ---"
+            pmset -g log | grep "Wake from\|DarkWake" | awk '{for(i=1;i<=NF;i++) if($i ~ /due to/) print $(i+1)}' | sort | uniq -c | sort -rn | head -15
+            echo ""
+            echo "--- TOP PROCESSES (CPU) ---"
+            ps aux | sort -rk 3 | head -8 | awk '{printf "%-8s %5s%% %5s%% %s\n", $1, $3, $4, $11}'
+            echo ""
+            echo "--- USB DEVICES ---"
+            system_profiler SPUSBDataType 2>/dev/null | grep -E "^\s{4}\w+|Manufacturer" | head -15
+            echo ""
+            echo "--- BATTOPT PROCESSES ---"
+            pgrep -fl "battopt" | grep -v "pgrep\|pmset" || echo "none"
+            echo ""
+            echo "--- CURRENT ASSERTIONS ---"
+            pmset -g assertions | head -25
+            echo ""
+            echo "=========================================="
+            echo "  End of Report"
+            echo "=========================================="
+        } > "$REPORT" 2>&1
+        log "sleep_report: $REPORT"
+        open -e "$REPORT"
+        release
+        ;;
+
+    sleep_report_save)
+        acquire
+        DIR="$HOME/.battopt-swiftbar/reports"
+        mkdir -p "$DIR"
+        REPORT="$DIR/report_$(date +%Y%m%d_%H%M).txt"
+        {
+            echo "BattOpt Report - $(date '+%Y-%m-%d %H:%M:%S')"
+            echo ""
+            echo "--- BATTERY ---"
+            sudo -n "$BAT" status 2>&1 | tail -n +2
+            echo ""
+            echo "--- POWER SETTINGS ---"
+            pmset -g | grep -E "womp|powernap|tcpkeepalive|standbydelay|hibernatemode|sleep "
+            echo ""
+            echo "--- WAKE EVENTS (last 24h) ---"
+            pmset -g log | grep -E "Wake from|DarkWake" | tail -30
+            echo ""
+            echo "--- ASSERTIONS ---"
+            pmset -g assertions | head -25
+        } > "$REPORT" 2>&1
+        log "report saved: $REPORT"
+        notify "BattOpt" "Report saved: $(basename "$REPORT")"
+        release
+        ;;
+
+    open_reports)
+        open "$HOME/.battopt-swiftbar/reports/" 2>/dev/null || notify "BattOpt" "No reports yet"
+        ;;
+
+        power_saver_on)
+        acquire
+        log "power_saver: on"
+        ~/.battopt-swiftbar/power_saver.sh on
+        notify "BattOpt" "Power Saver enabled — deep sleep optimized"
+        release
+        ;;
+
+    power_saver_off)
+        acquire
+        log "power_saver: off"
+        ~/.battopt-swiftbar/power_saver.sh off
+        notify "BattOpt" "Power Saver disabled"
+        release
+        ;;
+
+    power_saver_report)
+        acquire
+        # Summary for dialog
+        PSAVER_STATE=$([ -f "$HOME/.battopt-swiftbar/.power_saver" ] && echo "ENABLED" || echo "DISABLED")
+        PCT=$(sudo -n "$BAT" status 2>/dev/null | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+")
+        HEALTH=$(sudo -n "$BAT" status 2>/dev/null | grep -oE "Health [0-9.]+" | grep -oE "[0-9.]+")
+        WAKE_24H=$(pmset -g log | grep -c "Wake from\|DarkWake" 2>/dev/null || echo 0)
+        TOP_REASON=$(pmset -g log | grep -E "Wake from|DarkWake" | awk '{for(i=1;i<=NF;i++) if($i ~ /due to/) print $(i+1)}' | sort | uniq -c | sort -rn | head -1)
+        USB_DEV=$(system_profiler SPUSBDataType 2>/dev/null | grep -A 2 "Wireless Device" | grep "Product ID" | head -1)
+        
+        # Build dialog content
+        MSG="═══ BattOpt Sleep Report ═══
+        
+🔋 Battery: ${PCT}%
+💚 Health: ${HEALTH}%
+⚙️ Power Saver: ${PSAVER_STATE}
+        
+📊 Last 24 hours:
+  • Wake events: ${WAKE_24H}
+  • Top reason: ${TOP_REASON}
+        
+🔌 USB devices:
+${USB_DEV:-  none detected}
+        
+📋 Active Issues:"
+        
+        # Detect issues
+        ISSUES=""
+        [ "$([ -f "$HOME/.battopt-swiftbar/.power_saver" ] && echo 1 || echo 0)" = "0" ] && ISSUES="${ISSUES}\n  ⚠️ Power Saver DISABLED"
+        [ "$WAKE_24H" -gt 30 ] && ISSUES="${ISSUES}\n  🔴 High wake count (${WAKE_24H})"
+        [ -n "$USB_DEV" ] && ISSUES="${ISSUES}\n  ⚠️ USB device may prevent deep sleep"
+        
+        [ -z "$ISSUES" ] && ISSUES="\n  ✅ No issues detected"
+        
+        MSG="${MSG}${ISSUES}"
+        
+        RESULT=$(osascript << AS
+try
+    set d to display dialog "${MSG}" buttons {"Close", "Save Full Report", "Toggle Saver"} default button "Close" with title "BattOpt Sleep Report" with icon note
+    return button returned of d
+on error
+    return "cancelled"
+end try
+AS
+)
+        
+        case "$RESULT" in
+            "Save Full Report")
+                ~/.battopt-swiftbar/dispatch.sh sleep_report_save
+                ;;
+            "Toggle Saver")
+                if [ -f "$HOME/.battopt-swiftbar/.power_saver" ]; then
+                    ~/.battopt-swiftbar/power_saver.sh off
+                    notify "BattOpt" "Power Saver disabled"
+                else
+                    ~/.battopt-swiftbar/power_saver.sh on
+                    notify "BattOpt" "Power Saver enabled"
+                fi
+                ;;
+        esac
+        release
+        ;;
+
+    esac
