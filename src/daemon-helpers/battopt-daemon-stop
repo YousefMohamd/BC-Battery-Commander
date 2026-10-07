@@ -1,0 +1,8 @@
+#!/bin/bash
+PLIST="/Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist"
+/bin/launchctl unload -w "$PLIST" 2>/dev/null
+sleep 1
+/usr/bin/pkill -9 -f "Application Support/battopt" 2>/dev/null
+/usr/bin/pkill -9 -f "/usr/local/bin/battopt" 2>/dev/null
+sleep 1
+exit 0

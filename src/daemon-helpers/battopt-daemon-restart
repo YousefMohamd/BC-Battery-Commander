@@ -1,0 +1,4 @@
+#!/bin/bash
+/bin/launchctl kickstart -k system/com.buddha-path.BattOpt.daemon 2>/dev/null
+sleep 2
+exit 0
