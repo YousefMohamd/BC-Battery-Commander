@@ -899,3 +899,43 @@ text
 - ⏳ Better: invalidate cache on state change events
 - ⏳ Best: state version counter — cache invalidates when daemon restarts
 
+
+
+---
+
+## Corrections Log
+
+### 2026-10-11 — disablesleep support confirmed
+
+**Original assumption (wrong):** `pmset -a disablesleep 1` not supported on macOS 10.15.
+
+**Verified fact:** `sudo pmset -a disablesleep 1` works correctly on macOS 10.15.8 / MacBookPro9,1.
+- `SleepDisabled` appears in `pmset -g` output.
+- Toggling between 0 and 1 is immediate and clean.
+- End-to-end test: toggling 1 → 0 via script, no side effects.
+
+**Action taken:** Long Tasks Mode (Sleep Mode → download) migrated from `caffeinate -dis &` to
+`pmset -a disablesleep 1`. This unifies on a single mechanism and eliminates dependency on
+caffeinate.
+
+### 2026-10-11 — $HOME unavailable in launchd-root context
+
+**Original assumption:** Scripts run with `$HOME` set by environment.
+
+**Verified fact:** `launchd` root daemons (via `ProgramArguments`) do NOT pass `$HOME`. Scripts
+called from `powerwatch.c` inherited empty `$HOME`, causing all writes to `/.battopt-swiftbar/...`
+to fail silently.
+
+**Action taken:**
+- Added `HOME="${HOME:-/Users/Yousef}"` as line 2 in `arm_sleep.sh`, `pre_sleep_cleanup.sh`,
+  `post_wake_restore.sh`.
+- Added `EnvironmentVariables: {HOME: /Users/Yousef}` to `/Library/LaunchDaemons/com.battopt.powerwatch.plist`.
+
+### 2026-10-11 — Cache bug (NOW_TS used before definition)
+
+**Bug:** `$NOW_TS` was referenced at line 28 in the SwiftBar plugin before being set at line 30.
+Bash treated it as `0`, making `CACHE_AGE` negative, so `CACHE_AGE < TTL` always evaluated true.
+Cache never expired.
+
+**Action taken:** Moved `NOW_TS=$(date +%s)` to before its first use. Verified: plugin now
+reports live battery %.
