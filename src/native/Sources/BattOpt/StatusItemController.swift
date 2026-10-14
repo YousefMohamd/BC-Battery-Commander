@@ -1,42 +1,45 @@
-import AppKit
+import Cocoa
 
-class StatusItemController {
-    private let statusItem: NSStatusItem
+class StatusItemController: NSObject {
+    private var statusItem: NSStatusItem!
     private var timer: Timer?
 
-    init() {
+    override init() {
+        super.init()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "🔋"
-        buildMenu()
+        statusItem.button?.title = "🔋 --%"
+        refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.refresh()
         }
     }
 
-    private func buildMenu() {
-        let menu = NSMenu()
-        let header = NSMenuItem(title: "BattOpt (native)", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        menu.addItem(NSMenuItem.separator())
-        let quit = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-        statusItem.menu = menu
+    func refresh() {
+        let snap = SMCReader.readBattery()
+        let mode = StateStore.readActiveMode()
+        let cfg  = StateStore.readConfig()
+        let icon = pickIcon(snap: snap, mode: mode)
+        let pct  = snap.map { "\($0.pct)%" } ?? "--%"
+        statusItem.button?.title = "\(icon) \(pct)"
+
+        statusItem.menu = MenuBuilder.build(
+            snapshot: snap,
+            activeMode: mode,
+            config: cfg,
+            onRefresh: { [weak self] in self?.refresh() })
     }
 
-    private func refresh() {
-        // Placeholder: dynamic title later (SMC/IOReg)
-        statusItem.button?.title = "🔋"
-    }
-
-    @objc private func quitApp() {
-        NSApp.terminate(nil)
+    private func pickIcon(snap: BatterySnapshot?, mode: String) -> String {
+        if mode == "charge_full" || mode == "calibration" { return "⚡" }
+        if mode == "discharge" { return "🔋" }
+        guard let s = snap else { return "🔴" }
+        if s.isCharging && s.chCur > 50 { return "⚡" }
+        if s.ext && !s.isCharging { return "🔌" }
+        return "🔴"
     }
 
     func cleanup() {
-        timer?.invalidate()
-        timer = nil
-        NSStatusBar.system.removeStatusItem(statusItem)
+        timer?.invalidate(); timer = nil
+        if let item = statusItem { NSStatusBar.system.removeStatusItem(item) }
     }
 }
