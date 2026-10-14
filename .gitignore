@@ -27,58 +27,51 @@ build/
 *~
 
 # ─────────────────────────────────────────────
-# BattOpt runtime state (never committed)
+# Runtime state (live in ~/.battopt-swiftbar/)
 # ─────────────────────────────────────────────
-config
-.last_inputs
-.sleep_mode
-.current_power_mode
-.power_saver
-.apg_state
-.apg_paused
-.apg_off
+.active_mode
+.active_token
 .sd_session
 .sd_watch
+.hold_override
+.hold_token
+.pre_hold_config
+.pre_sleep_done
+.armed_for_sleep
+.status_cache
+.enforce_state
+.enforce_hb
+.enforce.log
+.guardian.log
+.ac_state
+.ncr_state
+.op.lock
+.launch.lock
+.temp_alert_state
+.sleep_mode
+.sleep_profile
+.sleep_prediction
+.current_power_mode
+.power_saver
+.auto_cleanup
+.apg_state
 .sailing_state
 .sailing_history
-.arm_log
-.armed_for_sleep
-.sleep_baseline
-.last_sleep_state
-.lid_watch_state
-.paused_services
-.permissions_status
-.user_shutdown
-.paused
-.disabled
-.daemon_fail_count
-.auto_cleanup
-.state.lock
-.op.lock
-
-# Caches
-.status_cache
 .wake_cache
 .usb_cache
-
-# Logs
-actions.log
-.healing.log
-.cleanup.log
-.audit.log
-.guardian.log
+.disabled
+.paused
+.user_shutdown
+config
 *.log
-
-# Data folders
-predictive_data/
-reports/
-diagnostics/
-backups/
 .notify/
+.install-backup/
+.reports/
 .guard_alerts/
 
-# Temporary
-*.tmp
+# ─────────────────────────────────────────────
+# Snapshots & backups
+# ─────────────────────────────────────────────
+.snapshot_*/
+*.bak-*
 *.bak
-*.new
-*.old

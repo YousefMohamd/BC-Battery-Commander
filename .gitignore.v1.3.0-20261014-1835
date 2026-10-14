@@ -1,0 +1,84 @@
+# ─────────────────────────────────────────────
+# macOS metadata
+# ─────────────────────────────────────────────
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.AppleDouble
+.LSOverride
+
+# ─────────────────────────────────────────────
+# Build artifacts
+# ─────────────────────────────────────────────
+dist/*.dmg
+*.o
+*.dSYM/
+build/
+
+# ─────────────────────────────────────────────
+# Editor / IDE
+# ─────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ─────────────────────────────────────────────
+# BattOpt runtime state (never committed)
+# ─────────────────────────────────────────────
+config
+.last_inputs
+.sleep_mode
+.current_power_mode
+.power_saver
+.apg_state
+.apg_paused
+.apg_off
+.sd_session
+.sd_watch
+.sailing_state
+.sailing_history
+.arm_log
+.armed_for_sleep
+.sleep_baseline
+.last_sleep_state
+.lid_watch_state
+.paused_services
+.permissions_status
+.user_shutdown
+.paused
+.disabled
+.daemon_fail_count
+.auto_cleanup
+.state.lock
+.op.lock
+
+# Caches
+.status_cache
+.wake_cache
+.usb_cache
+
+# Logs
+actions.log
+.healing.log
+.cleanup.log
+.audit.log
+.guardian.log
+*.log
+
+# Data folders
+predictive_data/
+reports/
+diagnostics/
+backups/
+.notify/
+.guard_alerts/
+
+# Temporary
+*.tmp
+*.bak
+*.new
+*.old

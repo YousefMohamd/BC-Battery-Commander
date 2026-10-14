@@ -10,6 +10,8 @@ log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 case "$1" in
     on)
         log "power_saver: ON"
+        # ARCH_CHECK
+        ARCH=$(uname -m)
         # Disable wake sources
         /usr/bin/sudo /usr/bin/pmset -a powernap 0       # Prevent Power Nap wakeups
         /usr/bin/sudo /usr/bin/pmset -a womp 0           # No wake-on-magic-packet
@@ -25,6 +27,14 @@ case "$1" in
         /usr/bin/sudo /usr/bin/pmset -a disksleep 10
         # Cancel scheduled system wakes (RTC/Maintenance)
         /usr/bin/sudo /usr/bin/pmset schedule cancelall 2>/dev/null
+        # Deep hibernate (RAM → Disk)
+        # Only for Intel Macs
+        if [ "$ARCH" = "x86_64" ]; then
+            /usr/bin/sudo /usr/bin/pmset -a hibernatemode 25
+        fi
+        /usr/bin/sudo /usr/bin/pmset -a autopoweroff 1
+        /usr/bin/sudo /usr/bin/pmset -a autopoweroffdelay 900
+        /usr/bin/sudo /usr/bin/pmset -a standbydelay 900
         echo "ENABLED" > "$FLAG"
         echo "Power Saver: ENABLED"
         ;;
@@ -38,6 +48,8 @@ case "$1" in
         /usr/bin/sudo /usr/bin/pmset -a standbydelay 4200
         /usr/bin/sudo /usr/bin/pmset -a standbydelayhigh 4200
         /usr/bin/sudo /usr/bin/pmset -a standbydelaylow 4200
+        /usr/bin/sudo /usr/bin/pmset -a hibernatemode 3
+        /usr/bin/sudo /usr/bin/pmset -a autopoweroff 0
         rm -f "$FLAG"
         echo "Power Saver: DISABLED"
         ;;

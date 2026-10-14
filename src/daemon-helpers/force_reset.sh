@@ -3,6 +3,7 @@ BAT="/usr/local/bin/battopt"
 PLIST="/Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist"
 DOMAIN="system/com.buddha-path.BattOpt.daemon"
 LOG="$HOME/.battopt-swiftbar/actions.log"
+[ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
 
 echo "[$(date '+%H:%M:%S')] FORCE RESET start" >> "$LOG"
 rm -f "$HOME/.battopt-swiftbar/.disabled"
