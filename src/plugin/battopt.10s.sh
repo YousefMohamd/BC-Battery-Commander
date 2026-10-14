@@ -206,9 +206,6 @@ elif [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
 else
     ICON="🔴"
 fi
-[ -z "$ICON_CHCUR" ] && ICON_CHCUR=0
-[ -z "$ICON_NCR" ] && ICON_NCR=0
-
 # SMC-true percentage (raw, not from cache)
 if [ -n "$ICON_CURCAP" ] && [ -n "$ICON_MAXCAP" ] && [ "$ICON_MAXCAP" -gt 0 ] 2>/dev/null; then
     SMC_PCT=$(( (ICON_CURCAP * 100 + ICON_MAXCAP / 2) / ICON_MAXCAP ))
@@ -216,14 +213,6 @@ else
     SMC_PCT="?"
 fi
 
-# Icon reflects real SMC state
-if [ "$ICON_ISCHG" = "Yes" ] && [ "$ICON_CHCUR" -gt 50 ]; then
-    ICON="⚡"
-elif [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
-    ICON="🔌"
-else
-    ICON="🔴"
-fi
 
 # === MODE text ===
 if [ "$PROC_C" -gt 0 ]; then

@@ -90,7 +90,8 @@ if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ]; then
         log "LAYER2: overshoot detected (PCT=$PCT > UPPER=$UPPER)"
         
         # Create fresh session
-        SD_ID="$(date +%s)_guardian"
+        SD_ID=$(guard_session_begin discharge)
+        [ -n "$SD_ID" ] || exit 0
         echo "$SD_ID" > "$SESSION_FILE"
         
         # Start watcher

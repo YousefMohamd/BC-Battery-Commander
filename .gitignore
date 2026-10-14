@@ -75,3 +75,4 @@ config
 .snapshot_*/
 *.bak-*
 *.bak
+.aider*

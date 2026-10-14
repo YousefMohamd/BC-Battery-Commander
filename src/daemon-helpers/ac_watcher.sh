@@ -34,7 +34,7 @@ echo "$EXT" > "$STATE_FILE"
 
 # Detect transitions
 if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
-    # Respect active session — do NOT override charge_full / discharge / calibrating
+    # Respect active session — do NOT override charge_full / discharge / calibration
     ACTIVE_MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
     [ -z "$ACTIVE_MODE" ] && ACTIVE_MODE="idle"
     if guard_session_active; then

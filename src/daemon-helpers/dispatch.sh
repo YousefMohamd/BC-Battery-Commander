@@ -601,8 +601,9 @@ CFGEOF
         # verify ownership. The current block writes charge_full without one.
         log "charge_full: START"
 
-        # Layer 18: mark active mode
-        echo "charge_full" > "$HOME/.battopt-swiftbar/.active_mode"
+        # Layer 18: mark active mode + create guard token
+        TOKEN=$(guard_session_begin charge_full)
+        [ -n "$TOKEN" ] || { log "charge_full: token fail"; release; exit 1; }
 
         # Release all limits — must use 100/99 to clear SMC hold
         # (limit disable alone doesn't release NCR=14)
@@ -618,10 +619,13 @@ CFGEOF
             B="'"$BAT"'"
             L="'"$LOG"'"
             D="'"$HOME"'/.battopt-swiftbar"
+            T="'"$TOKEN"'"
+            source "$D/state_guard.sh" 2>/dev/null
             for i in $(seq 1 720); do
                 sleep 10
                 P=$(sudo -n "$B" status 2>/dev/null | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+")
                 if [ -n "$P" ] && [ "$P" -ge 99 ]; then
+                    guard_token_matches "$T" 2>/dev/null || [ "$(cat "$D/.active_mode" 2>/dev/null)" = "charge_full" ] || exit 0
                     [ "$(cat "$D/.active_mode" 2>/dev/null)" = "charge_full" ] || exit 0
                     # Lock SMC at 99/98
                     sudo -n "$B" limit 99 98 >/dev/null 2>&1
@@ -799,23 +803,26 @@ AS
 
     limit_custom)
         acquire; ensure_clean
-        
-        # Cleanup
+
+        # FIX: Kill ALL active ops (charge_full blocks discharge)
+        log "limit_custom: killing active ops"
+        sudo pkill -9 -f "battopt charge" 2>/dev/null || true
+        sudo pkill -9 -f "battopt discharge" 2>/dev/null || true
+        sudo pkill -9 -f "battopt calibrate" 2>/dev/null || true
+        sudo -n "$BAT" charge stop >/dev/null 2>&1 || true
+        sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
+        sudo -n "$BAT" calibrate stop >/dev/null 2>&1 || true
         sd_session_invalidate 2>/dev/null || true
-        sudo pkill -9 -f "battopt discharge" 2>/dev/null
-        sudo -n "$BAT" discharge stop >/dev/null 2>&1
-        sleep 1
+        rm -f "$HOME/.battopt-swiftbar/.active_token"
+        echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
+        sleep 2
         
         CUR=$(get_pct)
 
-        # Layer 16c: use PRE-HOLD values as default if hold was active
-        if [ -f "$HOME/.battopt-swiftbar/.pre_hold_config" ]; then
-            source "$HOME/.battopt-swiftbar/.pre_hold_config"
-            DEF="${LAST_UPPER}/${LAST_LOWER}"
-            log "limit_custom: default from pre-hold config ($DEF)"
-        else
-            DEF="${LAST_UPPER}/${LAST_LOWER}"
-        fi
+        # Default: prefer last user-entered custom limit
+        DEF=$(get_last_input LIMIT_CUSTOM "")
+        [ -z "$DEF" ] && DEF="${LAST_UPPER}/${LAST_LOWER}"
+        log "limit_custom: default $DEF"
         
         R=$(osascript <<AS
 try
@@ -846,6 +853,7 @@ AS
         SAIL_GAP=$((U - L))
         [ "$L" -lt "$U" ] && SAILING=true
         save_cfg
+        save_last_input LIMIT_CUSTOM "$U/$L"
         # LAYER 16: clear hold flags
         rm -f "$HOME/.battopt-swiftbar/.hold_override"
         rm -f "$HOME/.battopt-swiftbar/.hold_token"
@@ -854,7 +862,8 @@ AS
         
         if [ "$CUR" -gt "$U" ]; then
             # Discharge path
-            SD_ID=$(sd_session_new)
+            SD_ID=$(guard_session_begin discharge)
+            [ -n "$SD_ID" ] || SD_ID=$(sd_session_new)
             log "limit_custom: START discharge $CUR%→$U% (session $SD_ID)"
             notify "BattOpt" "Discharging ${CUR}% → ${U}%"
             
@@ -876,6 +885,9 @@ AS
                 notify "BattOpt" "Discharge active → ${U}%"
             else
                 log "limit_custom: discharge FAILED — fallback to limit"
+                rm -f "$HOME/.battopt-swiftbar/.sd_session"
+                rm -f "$HOME/.battopt-swiftbar/.active_token"
+                echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
                 sudo -n "$BAT" limit "$U" "$L" >/dev/null 2>&1
             fi
         else

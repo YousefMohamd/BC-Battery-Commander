@@ -5,7 +5,7 @@ LOG="$HOME/.battopt-swiftbar/actions.log"
 [ -f "$CONFIG" ] && source "$CONFIG"
 
 # === ACTIVE SESSION GUARD ===
-# Skip if ANY session is active (charge_full, discharge, hold, calibrating)
+# Skip if ANY session is active (charge_full, discharge, hold, calibration)
 if [ -f "$HOME/.battopt-swiftbar/state_guard.sh" ]; then
     source "$HOME/.battopt-swiftbar/state_guard.sh"
     if guard_session_active; then

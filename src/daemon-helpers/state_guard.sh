@@ -26,7 +26,7 @@ guard_unlock() {
 
 guard_session_active() {
     case "$(cat "$SG_MODE" 2>/dev/null | tr -d '[:space:]')" in
-        charge_full|discharge|hold|calibrating|calibration) return 0 ;;
+        charge_full|discharge|hold|calibration) return 0 ;;
         *) return 1 ;;
     esac
 }

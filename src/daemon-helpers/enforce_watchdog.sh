@@ -85,7 +85,7 @@ log "VIOLATION #$COUNT: PCT=${PCT}% IsChg=Yes UPPER=${UPPER}% (elapsed ${ELAPSED
 if [ "$COUNT" -eq 1 ]; then
     # First detection: reapply limit (may unstick daemon)
     log "action: reapplying limit ${UPPER}/${LOWER}"
-    sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1
+    if ! sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
 
 elif [ "$COUNT" -eq 4 ]; then
     # 60s elapsed: restart daemon
@@ -96,7 +96,7 @@ elif [ "$COUNT" -eq 4 ]; then
     sleep 1
     sudo launchctl load -w /Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist 2>/dev/null
     sleep 3
-    sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1
+    if ! sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
 
 elif [ "$COUNT" -eq 8 ]; then
     # 120s elapsed: force discharge

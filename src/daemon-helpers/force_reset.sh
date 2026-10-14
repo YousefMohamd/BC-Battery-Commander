@@ -36,3 +36,8 @@ done
 STATE=$(sudo -n "$BAT" status 2>&1 | grep -oE "(charging|discharging|no charging)" | head -1)
 echo "[$(date '+%H:%M:%S')] FORCE RESET done - ${STATE:-unknown}" >> "$LOG"
 echo "State: ${STATE:-unknown}"
+
+# Reset session state (avoid stale active_mode blocking future actions)
+rm -f "$HOME/.battopt-swiftbar/.active_token"
+rm -f "$HOME/.battopt-swiftbar/.sd_session"
+echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
