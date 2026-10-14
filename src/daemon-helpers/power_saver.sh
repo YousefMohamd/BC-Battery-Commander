@@ -5,6 +5,8 @@
 LOG="$HOME/.battopt-swiftbar/actions.log"
 FLAG="$HOME/.battopt-swiftbar/.power_saver"
 
+[ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
+
 log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 
 case "$1" in
@@ -13,43 +15,43 @@ case "$1" in
         # ARCH_CHECK
         ARCH=$(uname -m)
         # Disable wake sources
-        /usr/bin/sudo /usr/bin/pmset -a powernap 0       # Prevent Power Nap wakeups
-        /usr/bin/sudo /usr/bin/pmset -a womp 0           # No wake-on-magic-packet
-        /usr/bin/sudo /usr/bin/pmset -a tcpkeepalive 0   # No TCP keep-alive during sleep
-        /usr/bin/sudo /usr/bin/pmset -a acwake 0         # No wake on AC change
-        /usr/bin/sudo /usr/bin/pmset -a lidwake 1        # Wake only on lid open
+        sudo -n /usr/bin/pmset -a powernap 0       # Prevent Power Nap wakeups
+        sudo -n /usr/bin/pmset -a womp 0           # No wake-on-magic-packet
+        sudo -n /usr/bin/pmset -a tcpkeepalive 0   # No TCP keep-alive during sleep
+        sudo -n /usr/bin/pmset -a acwake 0         # No wake on AC change
+        sudo -n /usr/bin/pmset -a lidwake 1        # Wake only on lid open
         # Faster transition to hibernate
-        /usr/bin/sudo /usr/bin/pmset -a standbydelay 1800
-        /usr/bin/sudo /usr/bin/pmset -a standbydelayhigh 1800
-        /usr/bin/sudo /usr/bin/pmset -a standbydelaylow 1800
-        /usr/bin/sudo /usr/bin/pmset -a standby 1
+        sudo -n /usr/bin/pmset -a standbydelay 900
+        sudo -n /usr/bin/pmset -a standbydelayhigh 900
+        sudo -n /usr/bin/pmset -a standbydelaylow 900
+        sudo -n /usr/bin/pmset -a standby 1
         # Disk sleep (silences warnings)
-        /usr/bin/sudo /usr/bin/pmset -a disksleep 10
+        sudo -n /usr/bin/pmset -a disksleep 10
         # Cancel scheduled system wakes (RTC/Maintenance)
-        /usr/bin/sudo /usr/bin/pmset schedule cancelall 2>/dev/null
+        sudo -n /usr/bin/pmset schedule cancelall 2>/dev/null
         # Deep hibernate (RAM → Disk)
         # Only for Intel Macs
         if [ "$ARCH" = "x86_64" ]; then
-            /usr/bin/sudo /usr/bin/pmset -a hibernatemode 25
+            sudo -n /usr/bin/pmset -a hibernatemode 25
         fi
-        /usr/bin/sudo /usr/bin/pmset -a autopoweroff 1
-        /usr/bin/sudo /usr/bin/pmset -a autopoweroffdelay 900
-        /usr/bin/sudo /usr/bin/pmset -a standbydelay 900
-        echo "ENABLED" > "$FLAG"
+        sudo -n /usr/bin/pmset -a autopoweroff 1
+        sudo -n /usr/bin/pmset -a autopoweroffdelay 900
+        printf "ENABLED" > "$FLAG.tmp" && mv "$FLAG.tmp" "$FLAG"
         echo "Power Saver: ENABLED"
         ;;
     off)
         log "power_saver: OFF"
-        /usr/bin/sudo /usr/bin/pmset -a powernap 1
-        /usr/bin/sudo /usr/bin/pmset -a womp 1
-        /usr/bin/sudo /usr/bin/pmset -a tcpkeepalive 1
-        /usr/bin/sudo /usr/bin/pmset -a acwake 1
-        /usr/bin/sudo /usr/bin/pmset -a lidwake 1
-        /usr/bin/sudo /usr/bin/pmset -a standbydelay 4200
-        /usr/bin/sudo /usr/bin/pmset -a standbydelayhigh 4200
-        /usr/bin/sudo /usr/bin/pmset -a standbydelaylow 4200
-        /usr/bin/sudo /usr/bin/pmset -a hibernatemode 3
-        /usr/bin/sudo /usr/bin/pmset -a autopoweroff 0
+        sudo -n /usr/bin/pmset -a powernap 1
+        sudo -n /usr/bin/pmset -a womp 1
+        sudo -n /usr/bin/pmset -a tcpkeepalive 1
+        sudo -n /usr/bin/pmset -a acwake 1
+        sudo -n /usr/bin/pmset -a lidwake 1
+        sudo -n /usr/bin/pmset -a standbydelay 4200
+        sudo -n /usr/bin/pmset -a standbydelayhigh 4200
+        sudo -n /usr/bin/pmset -a standbydelaylow 4200
+        sudo -n /usr/bin/pmset -a hibernatemode 3
+        sudo -n /usr/bin/pmset -a autopoweroff 0
+        sudo -n /usr/bin/pmset -a standby 0
         rm -f "$FLAG"
         echo "Power Saver: DISABLED"
         ;;
