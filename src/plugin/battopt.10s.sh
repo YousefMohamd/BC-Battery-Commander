@@ -40,26 +40,6 @@ else
 fi
 
 # ============ PROACTIVE NOTIFICATIONS ============
-notify_proactive() {
-    local key="$1" cooldown="$2" title="$3" msg="$4"
-    local f="$NOTIFY_DIR/$key"
-    local now=$NOW_TS
-    local last=0
-    [ -f "$f" ] && last=$(cat "$f" 2>/dev/null)
-    [ -z "$last" ] && last=0
-    if [ $((now - last)) -ge "$cooldown" ]; then
-        if [ -x "$TERMINAL_NOTIFIER" ] && [ -f "$BATTOPT_ICON" ]; then
-            "$TERMINAL_NOTIFIER" -title "$title" -message "$msg" \
-                -appIcon "$BATTOPT_ICON" -contentImage "$BATTOPT_ICON" \
-                -sound "Ping" -group "battopt-notify" >/dev/null 2>&1 &
-        else
-            osascript -e "display notification \"$msg\" with title \"$title\"" >/dev/null 2>&1 &
-        fi
-        echo "$now" > "$f"
-        return 0
-    fi
-    return 1
-}
 
 
 # === notify_proactive_v2 (v1.5.2) ===
