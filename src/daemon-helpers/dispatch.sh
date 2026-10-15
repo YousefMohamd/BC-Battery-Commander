@@ -219,6 +219,7 @@ apply_intent() {
         if [ -n "$PCT" ] && [ "$PCT" -gt "$LAST_UPPER" ]; then
             # Battery above upper — trigger discharge to upper
             local SD_ID=$(sd_session_new)
+            echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"
             log "apply: DISCHARGE above upper ($PCT% > $LAST_UPPER%) session=$SD_ID"
             
             # Kill old discharge
@@ -864,6 +865,7 @@ AS
             # Discharge path
             SD_ID=$(guard_session_begin discharge)
             [ -n "$SD_ID" ] || SD_ID=$(sd_session_new)
+            echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"
             log "limit_custom: START discharge $CUR%→$U% (session $SD_ID)"
             notify "BattOpt" "Discharging ${CUR}% → ${U}%"
             

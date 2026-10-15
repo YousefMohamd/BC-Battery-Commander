@@ -129,7 +129,7 @@ notify_proactive_v2() {
 
     local NOTIFIER="/Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier"
     if [ -x "$NOTIFIER" ]; then
-        "$NOTIFIER" -title "BattOpt" -subtitle "$title" -message "$msg" -group "battopt-$key" -sound default 2>/dev/null
+        "$NOTIFIER" -title "BattOpt" -subtitle "$title" -message "$msg" -appIcon "$BATTOPT_ICON" -contentImage "$BATTOPT_ICON" -group "battopt-$key" -sound default 2>/dev/null
     else
         osascript -e "display notification \"$msg\" with title \"$title\"" 2>/dev/null
     fi
