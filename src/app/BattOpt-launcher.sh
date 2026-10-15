@@ -22,8 +22,11 @@ trap "rm -f '$LOCK_FILE'" EXIT
 log "=== LAUNCH START ==="
 START=$(date +%s)
 
-# 1. Respect user shutdown; clear soft flags only
-[ -f "$DASH/.user_shutdown" ] && { log "user shutdown — exit"; exit 0; }
+# 1. Explicit launch: clear user_shutdown + soft flags
+if [ -f "$DASH/.user_shutdown" ]; then
+    log "explicit launch — clearing user_shutdown"
+    rm -f "$DASH/.user_shutdown"
+fi
 rm -f "$DASH/.disabled" "$DASH/.paused" 2>/dev/null
 
 # 2. Restore plugin
