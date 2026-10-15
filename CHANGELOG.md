@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v1.6.0] - 2026-10-16
+
+### Added
+- 40 bats tests (state_guard, dispatch_helpers, syntax, ci_check, pct_calc, ac_watcher, sleep_manager, enforce_watchdog)
+- bats-core submodule at tests/bats
+- tests/run.sh wrapper
+- SECURITY.md
+- .github/workflows/ci.yml
+
+### Changed
+- Removed dead notify_proactive() function (superseded by _v2)
+
+
 ## [1.3.0] — 2026-10-11
 
 ### Added
