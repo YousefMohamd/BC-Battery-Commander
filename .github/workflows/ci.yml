@@ -1,0 +1,15 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest # use macos-10.15 if available
+    steps:
+      - uses: actions/checkout@v4
+        with: {submodules: true}
+      - name: bash syntax
+        run: find src -name "*.sh" -type f -exec bash -n {} \;
+      - name: shellcheck
+        uses: ludeeus/action-shellcheck@master
+        with: {severity: warning}
+      - name: bats tests
+        run: tests/bats/bin/bats tests/*.bats
