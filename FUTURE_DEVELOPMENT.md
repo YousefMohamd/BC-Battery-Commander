@@ -939,3 +939,30 @@ Cache never expired.
 
 **Action taken:** Moved `NOW_TS=$(date +%s)` to before its first use. Verified: plugin now
 reports live battery %.
+
+---
+
+## v1.5.1 — Sleep Optimization (Next)
+
+### Autopoweroff Delay Fix
+- Current: autopoweroffdelay=900 (15 min)
+- Problem: RTC wakes every 15 min → 16% drain/night
+- Fix: autopoweroffdelay=3600 (1 hour)
+- Expected: 5-8% drain (vs 16%)
+
+### Deferred Tasks (v2.0+)
+- Native app notifications (full system)
+- Icon + branding refresh
+- 20 features migration to native
+- Unit/integration tests
+- CI/CD pipeline
+- Code signing + notarization
+- Analytics + crash reporting
+- Store listing preparation
+
+### Notifications Redesign (v1.5.2)
+- Audit current notifications (too noisy)
+- Remove: repeated, low-value alerts
+- Keep: critical (battery critical, temp, hold_reached)
+- Add: cooldowns per type
+- Target: < 3 notifications per day
