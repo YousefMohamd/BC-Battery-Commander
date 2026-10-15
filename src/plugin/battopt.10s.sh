@@ -61,13 +61,89 @@ notify_proactive() {
     return 1
 }
 
+
+# === notify_proactive_v2 (v1.5.2) ===
+# Rules:
+#   1. Max 3 notifications per day (any type)
+#   2. Min 30 min between same-type (unless critical)
+#   3. Quiet hours 23:00-08:00 (except CRITICAL types)
+# CRITICAL = battery_critical, temp_critical, enforce_critical, daemon_recovery
+notify_proactive_v2() {
+    local key="$1" cooldown="$2" title="$3" msg="$4"
+    local NOTIFY_DIR="$HOME/.battopt-swiftbar/.notify"
+    mkdir -p "$NOTIFY_DIR"
+
+    local now=$(date +%s)
+    local today=$(date +%Y%m%d)
+    local hour=$(date +%H)
+
+    local daily_file="$NOTIFY_DIR/.daily_$today"
+    local type_file="$NOTIFY_DIR/$key"
+
+    # Classify: CRITICAL bypasses quiet hours + daily cap? NO — max 3/day applies to ALL
+    local is_critical=0
+    case "$key" in
+        battery_critical|temp_critical|enforce_critical|daemon_recovery|hold_reached_*)
+            is_critical=1 ;;
+    esac
+
+    # Quiet hours check (23:00-08:00) — non-critical silenced
+    if [ "$is_critical" = "0" ]; then
+        if [ "$hour" -ge 23 ] || [ "$hour" -lt 8 ]; then
+            return 0
+        fi
+    fi
+
+    # Daily cap: max 3 per day (ALL types)
+    if [ -f "$daily_file" ]; then
+        local count=$(wc -l < "$daily_file" | tr -d ' ')
+        if [ "$count" -ge 3 ]; then
+            return 0
+        fi
+    fi
+
+    # Same-type cooldown (non-critical can have 30min minimum)
+    if [ "$is_critical" = "0" ] && [ -f "$type_file" ]; then
+        local last=$(cat "$type_file" 2>/dev/null || echo 0)
+        local diff=$((now - last))
+        [ "$diff" -lt 1800 ] && return 0
+    fi
+
+    # Critical types still have a 30-min floor (avoid spam)
+    if [ "$is_critical" = "1" ] && [ -f "$type_file" ]; then
+        local last=$(cat "$type_file" 2>/dev/null || echo 0)
+        local diff=$((now - last))
+        [ "$diff" -lt 1800 ] && return 0
+    fi
+
+    # v1 cooldown check (custom cooldown per type)
+    if [ -f "$type_file" ]; then
+        local last=$(cat "$type_file" 2>/dev/null || echo 0)
+        local diff=$((now - last))
+        [ "$diff" -lt "$cooldown" ] && return 0
+    fi
+
+    # Record + send
+    echo "$now" > "$type_file"
+    echo "$key" >> "$daily_file"
+
+    local NOTIFIER="/Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier"
+    if [ -x "$NOTIFIER" ]; then
+        "$NOTIFIER" -title "BattOpt" -subtitle "$title" -message "$msg" -group "battopt-$key" -sound default 2>/dev/null
+    else
+        osascript -e "display notification \"$msg\" with title \"$title\"" 2>/dev/null
+    fi
+}
+
+# End v1.5.2
+
 # ============ AUTO RECOVERY ============
 if [ -z "$SNAP" ] || echo "$SNAP" | grep -q "Timeout\|not running"; then
     FAILS=$(cat "$FAIL_FILE" 2>/dev/null || echo 0)
     FAILS=$((FAILS + 1))
     echo "$FAILS" > "$FAIL_FILE"
     if [ "$FAILS" -ge 3 ]; then
-        notify_proactive "daemon_recovery" 600 "BattOpt Recovery" "Daemon unresponsive — auto-restarting"
+        notify_proactive_v2 "daemon_recovery" 600 "BattOpt Recovery" "Daemon unresponsive — auto-restarting"
         "$HOME/.battopt-swiftbar/force_reset.sh" >/dev/null 2>&1 &
         echo "0" > "$FAIL_FILE"
     fi
@@ -106,22 +182,22 @@ ORANGE="color=#FF9500"
 # ============ PROACTIVE CHECKS ============
 if [ -n "$TEMP_INT" ]; then
     if [ "$TEMP_INT" -ge 45 ]; then
-        notify_proactive "temp_critical" 300 "Battery Critical Temperature" "${TEMP}°C - reduce load immediately"
+        notify_proactive_v2 "temp_critical" 300 "Battery Critical Temperature" "${TEMP}°C - reduce load immediately"
     elif [ "$TEMP_INT" -ge 42 ]; then
-        notify_proactive "temp_high" 900 "Battery Hot" "${TEMP}°C - consider cooling"
+        : # REMOVED v1.5.2 (noise) temp_high
     fi
 fi
 
 if echo "$SNAP" | grep -q ", discharging" && [ -n "$PCT" ] && [ "$PCT" -le 20 ]; then
-    notify_proactive "low_batt" 1800 "Battery Low" "${PCT}% - plug in charger"
+    : # REMOVED v1.5.2 (noise) low_batt
 fi
 
 if echo "$SNAP" | grep -q ", charging" && [ -n "$PCT" ] && [ "$PCT" -ge 99 ] && [ -z "$UPPER" ]; then
-    notify_proactive "full_charge" 3600 "Charging Complete" "Battery at ${PCT}%"
+    : # REMOVED v1.5.2 (noise) full_charge
 fi
 
 if [ -n "$HEALTH_INT" ] && [ "$HEALTH_INT" -le 75 ]; then
-    notify_proactive "health_low" 604800 "Battery Health Low" "Health at ${HEALTH}% - service recommended"
+    : # REMOVED v1.5.2 (noise) health_low
 fi
 
 # Smart Discharge completion detection
@@ -129,7 +205,7 @@ SD_STATE="$HOME/.battopt-swiftbar/.sd_watch"
 if [ -f "$SD_STATE" ]; then
     SD_TARGET=$(cat "$SD_STATE" 2>/dev/null)
     if [ -n "$PCT" ] && [ -n "$SD_TARGET" ] && [ "$PCT" -le "$SD_TARGET" ]; then
-        notify_proactive "sd_complete" 60 "Smart Discharge" "Reached target ${SD_TARGET}%"
+        notify_proactive_v2 "sd_complete" 1800 "Smart Discharge" "Reached target ${SD_TARGET}%"
         rm -f "$SD_STATE"
     fi
 fi
@@ -137,10 +213,10 @@ fi
 # ============ LOW BATTERY ON BATTERY POWER ============
 if echo "$SNAP" | grep -q ", discharging"; then
     if [ -n "$PCT" ] && [ "$PCT" -le 61 ] && [ "$PCT" -gt 20 ]; then
-        notify_proactive "battery_low_warning" 1800 "⚠️ Battery Low on Battery Power" "Battery at ${PCT}% - plug in charger soon (forgot?)"
+        : # REMOVED v1.5.2 (noise) battery_low_warning
     fi
     if [ -n "$PCT" ] && [ "$PCT" -le 20 ]; then
-        notify_proactive "battery_critical" 900 "🔴 Battery Critical" "Battery at ${PCT}% - plug in charger immediately"
+        notify_proactive_v2 "battery_critical" 900 "🔴 Battery Critical" "Battery at ${PCT}% - plug in charger immediately"
     fi
 fi
 
@@ -148,7 +224,7 @@ fi
 # Warn if temperature is high AND battery exceeds limit
 if [ -n "$TEMP_INT" ] && [ "$TEMP_INT" -ge 40 ]; then
     if [ -n "$PCT" ] && [ -n "$UPPER" ] && [ "$PCT" -gt "$UPPER" ]; then
-        notify_proactive "load_heat_override" 600 "⚠️ Load + Heat" "Battery ${PCT}% > limit ${UPPER}% with temp ${TEMP}C — check for macOS override"
+        notify_proactive_v2 "load_heat_override" 600 "⚠️ Load + Heat" "Battery ${PCT}% > limit ${UPPER}% with temp ${TEMP}C — check for macOS override"
     fi
 fi
 
@@ -160,7 +236,7 @@ if [ -n "$TEMP_INT" ]; then
     PREV_STATE=$(cat "$TEMP_FLAG" 2>/dev/null || echo "0")
     
     if [ "$TEMP_INT" -ge 42 ] && [ "$PREV_STATE" != "1" ]; then
-        notify_proactive "temp_critical" 1800 "🌡️ Battery Hot" "Temperature: ${TEMP}°C — unplug charger, check cooling"
+        notify_proactive_v2 "temp_critical" 1800 "🌡️ Battery Hot" "Temperature: ${TEMP}°C — unplug charger, check cooling"
         echo "1" > "$TEMP_FLAG"
     elif [ "$TEMP_INT" -lt 38 ] && [ "$PREV_STATE" = "1" ]; then
         echo "0" > "$TEMP_FLAG"
@@ -257,7 +333,7 @@ if [ "$PROC_D_NOTIF" = "0" ] && echo "$MODE" | grep -qE "^Holding at [0-9]+%$"; 
         DIFF=$((PCT - HOLD_PCT))
         [ "$DIFF" -lt 0 ] && DIFF=$((-DIFF))
         if [ "$DIFF" -le 1 ]; then
-            notify_proactive "hold_reached" 3600 \
+            notify_proactive_v2 "hold_reached" 3600 \
                 "Battery at Limit" \
                 "Holding at ${HOLD_PCT}% — charge limit enforced"
         fi
