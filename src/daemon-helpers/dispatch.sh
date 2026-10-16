@@ -261,11 +261,22 @@ intent_apply() {
 
     case "$kind" in
         limit)
-            U="$1"; L="$2"
+            U="$1"; L="$2"; MODE="$3"; GAP="$4"
             CUR=$(get_pct)
-            SAILING=true
-            SAIL_GAP=$((U - L))
-            [ "$SAIL_GAP" -lt 1 ] && SAIL_GAP=1
+            # Respect caller-provided MODE; fallback for backward compat
+            if [ "$MODE" = "Hold" ]; then
+                SAILING=false
+                SAIL_GAP=1
+            elif [ "$MODE" = "Sail" ] || [ "$MODE" = "Sailing" ]; then
+                SAILING=true
+                [ -n "$GAP" ] && SAIL_GAP="$GAP"
+                validate_int "$SAIL_GAP" 5 30 2>/dev/null || SAIL_GAP=10
+            else
+                # backward compat: no MODE passed → keep legacy behavior
+                SAILING=true
+                SAIL_GAP=$((U - L))
+                [ "$SAIL_GAP" -lt 1 ] && SAIL_GAP=1
+            fi
             LAST_UPPER="$U"
             LAST_LOWER="$L"
             save_cfg
@@ -895,9 +906,74 @@ AS
         validate_int "$U" 50 100 || { notify "BattOpt" "Upper must be 50-100"; release; exit 0; }
         validate_int "$L" 20 99 || { notify "BattOpt" "Lower must be 20-99"; release; exit 0; }
         [ "$L" -ge "$U" ] && { notify "BattOpt" "Lower must be below upper"; release; exit 0; }
+
+        # === STEP 2: Mode ===
+        MODE=$(osascript <<AS
+try
+    set d to display dialog "Mode after reaching limit
+
+After reaching ${U}%:
+Hold = freeze at ${U}% only
+Sailing = oscillate between ${U}% and (${U} - gap)%" buttons {"Cancel","Hold","Sailing"} default button "Sailing" with title "BattOpt"
+    return button returned of d
+on error
+    return "__CANCELLED__"
+end try
+AS
+)
+        [ "$MODE" = "__CANCELLED__" ] && { release; exit 0; }
+        [ "$MODE" = "Cancel" ] && { release; exit 0; }
+
+        GAP=10
+        if [ "$MODE" = "Sailing" ]; then
+            GSEL=$(osascript <<AS
+try
+    set opts to {"5","10","15","30","Custom"}
+    set sel to choose from list opts with prompt "Sail gap in %:" default items {"10"} with title "BattOpt - Sail Gap" OK button name "Select" cancel button name "Cancel"
+    if sel is false then
+        return "__CANCELLED__"
+    else
+        return item 1 of sel
+    end if
+on error
+    return "__CANCELLED__"
+end try
+AS
+)
+            [ "$GSEL" = "__CANCELLED__" ] && { release; exit 0; }
+            if [ "$GSEL" = "Custom" ]; then
+                GSEL=$(osascript <<AS
+try
+    set d to display dialog "Custom sail gap (5-30):" default answer "$(get_last_input SAIL_GAP_CUSTOM 10)" buttons {"Cancel","OK"} default button "OK" with title "BattOpt"
+    return text returned of d
+on error
+    return "__CANCELLED__"
+end try
+AS
+)
+                [ "$GSEL" = "__CANCELLED__" ] && { release; exit 0; }
+                validate_int "$GSEL" 5 30 || { notify "BattOpt" "Invalid gap (5-30)"; release; exit 0; }
+                save_last_input SAIL_GAP_CUSTOM "$GSEL"
+            fi
+            validate_int "$GSEL" 5 30 || { notify "BattOpt" "Invalid gap"; release; exit 0; }
+            GAP="$GSEL"
+            save_last_input SD_SAIL_GAP "$GAP"
+        fi
+
         save_last_input LIMIT_CUSTOM "$U/$L"
+
+        # Update config BEFORE intent_apply
+        if [ "$MODE" = "Hold" ]; then
+            SAILING=false; SAIL_GAP=1
+            LAST_LOWER=$((U - 1)); [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
+        else
+            SAILING=true; SAIL_GAP="$GAP"
+            LAST_LOWER=$((U - GAP)); [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
+        fi
+        LAST_UPPER="$U"
+        save_cfg
         release
-        intent_apply limit "$U" "$L" ;;
+        intent_apply limit "$U" "$LAST_LOWER" "$MODE" "$GAP" ;;
 
     sail_on)
         acquire; ensure_clean

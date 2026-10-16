@@ -141,18 +141,39 @@ fi
 
 fi
 
-# LAYER 3: Limit Guard — SMC != config
-# LAYER 16 fix: skip if user intentionally set a hold
-if [ ! -f "$HOME/.battopt-swiftbar/.hold_override" ]; then
-    if [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
-        log "LAYER3: limit drift (SMC=$SMC_UPPER/$SMC_LOWER, config=$UPPER/$LOWER)"
-        guarded || exit 0
-        sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
-    fi
+# LAYER 3: Config is source of truth
+HOLD_SINCE="$HOME/.battopt-swiftbar/.hold_since"
+AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
+[ -z "$AM_L3" ] && AM_L3=idle
+
+if [ "$AM_L3" = "hold" ]; then
+    [ -f "$HOLD_SINCE" ] || date +%s > "$HOLD_SINCE"
 else
-    # Hold is active — check if user cleared it (e.g., by setting new limit)
-    # The flag is cleared when a new limit is applied via limit_custom
-    :
+    rm -f "$HOLD_SINCE"
+fi
+
+if [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
+    case "$AM_L3" in
+        discharge|charge_full|calibration)
+            log "LAYER3: drift SMC=$SMC_UPPER config=$UPPER but active=$AM_L3 — skip"
+            ;;
+        hold)
+            NOW=$(date +%s)
+            SINCE=$(cat "$HOLD_SINCE" 2>/dev/null || echo "$NOW")
+            AGE=$((NOW - SINCE))
+            if [ "$AGE" -gt 300 ]; then
+                log "LAYER3: hold ${AGE}s drift SMC=$SMC_UPPER config=$UPPER — force reapply"
+                sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
+                date +%s > "$HOLD_SINCE"
+            else
+                log "LAYER3: hold ${AGE}s — defer"
+            fi
+            ;;
+        *)
+            log "LAYER3: drift SMC=$SMC_UPPER config=$UPPER — reapply (mode=$AM_L3)"
+            sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
+            ;;
+    esac
 fi
 
 # ═══════════════════════════════════════════════════════

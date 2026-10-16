@@ -548,26 +548,18 @@ else
     echo "Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
 fi
 
-# Determine current hold mode
-if [ "$SAILING" = "true" ]; then
-    HMODE_TITLE="Sailing ${LOWER}-${UPPER}%"
-    RADIO_SAIL="true"
-    RADIO_STATIC="false"
-else
-    HMODE_TITLE="Static at ${UPPER}%"
-    RADIO_SAIL="false"
-    RADIO_STATIC="true"
-fi
-
-# Hold Mode — header with submenu
-echo "Hold Mode — ${HMODE_TITLE} | size=13 color=#FFFFFF"
+# Hold Mode — static only
+echo "Hold Mode — Static at ${UPPER}% | size=13 color=#FFFFFF"
 echo "-- How battery is held: | size=10 color=#909090 disabled=true"
 echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
-echo "-- With Sailing | bash=$DISPATCH param1=sail_on terminal=false refresh=true checked=${RADIO_SAIL} size=12"
-echo "-- Battery oscillates ${LOWER}-${UPPER}% | size=9 color=#909090 disabled=true"
-echo "-- Static Hold | bash=$DISPATCH param1=sail_off terminal=false refresh=true checked=${RADIO_STATIC} size=12"
+echo "-- Static Hold | bash=$DISPATCH param1=sail_off terminal=false refresh=true checked=$([ "$SAILING" = "false" ] && echo true || echo false) size=12"
 echo "-- Battery frozen at ${UPPER}% | size=9 color=#909090 disabled=true"
+
+# Sailing — separate sibling submenu
+echo "Sailing — $([ "$SAILING" = "true" ] && echo "ON (${LOWER}-${UPPER}%)" || echo "OFF") | size=13 color=#FFFFFF"
 echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
+echo "-- Enable Sailing | bash=$DISPATCH param1=sail_on terminal=false refresh=true checked=$([ "$SAILING" = "true" ] && echo true || echo false) size=12"
+echo "-- Battery oscillates ${LOWER}-${UPPER}% | size=9 color=#909090 disabled=true"
 echo "-- Gap: 5% | bash=$DISPATCH param1=sail_gap_set param2=5 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "5" ] && echo true || echo false) size=12"
 echo "-- Gap: 10% | bash=$DISPATCH param1=sail_gap_set param2=10 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "10" ] && echo true || echo false) size=12"
 echo "-- Gap: 15% | bash=$DISPATCH param1=sail_gap_set param2=15 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "15" ] && echo true || echo false) size=12"
