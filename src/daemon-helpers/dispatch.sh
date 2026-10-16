@@ -802,6 +802,7 @@ AS
         rm -f "$HOME/.battopt-swiftbar/.hold_override" "$HOME/.battopt-swiftbar/.hold_token" "$HOME/.battopt-swiftbar/.pre_hold_config"
         soft_stop
         # Layer 18e: create a guarded session so guardian sees it as legitimate.
+        rm -f "$HOME/.battopt-swiftbar/.active_token"
         SD_ID=$(guard_session_begin discharge)
         [ -n "$SD_ID" ] || { release; exit 1; }
         echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"
@@ -880,6 +881,7 @@ AS
         
         if [ "$CUR" -gt "$U" ]; then
             # Discharge path
+            rm -f "$HOME/.battopt-swiftbar/.active_token"
             SD_ID=$(guard_session_begin discharge)
             [ -n "$SD_ID" ] || SD_ID=$(sd_session_new)
             echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"

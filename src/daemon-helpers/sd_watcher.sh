@@ -43,9 +43,10 @@ finish_discharge() {
     sudo -n "$BAT" limit "$T" "$LOW" >/dev/null 2>&1
     echo "[$(date +%H:%M:%S)] sd_watcher: $message" >> "$LOG"
     sudo -n "$BAT" discharge stop >/dev/null 2>&1
+    sudo pkill -9 -f '/usr/local/bin/battopt discharge ' 2>/dev/null || true
     # We already hold guard_lock and verified SD_ID = SESSION_FILE, so it is
     # safe to write idle directly.
-    rm -f "$SESSION_FILE"
+    rm -f "$SESSION_FILE" "$DASH/.active_token"
     echo "idle" > "$DASH/.active_mode"
 
     [ -f "$STATE_GUARD" ] && guard_unlock
