@@ -641,9 +641,7 @@ AS
         
         rm -f "$HOME/.battopt-swiftbar/.sleep_override_ac" "$HOME/.battopt-swiftbar/.sleep_override_lid"
         touch "$HOME/.battopt-swiftbar/.sleep_override_batt"
-        sudo -n /usr/bin/pmset -b standbydelaylow 14400
-        sudo -n /usr/bin/pmset -b standbydelayhigh 14400
-        sudo -n /usr/bin/pmset -b autopoweroffdelay 14400
+        ~/.battopt-swiftbar/power_saver.sh apply-delays travel
         sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null
         atomic_write "$HOME/.battopt-swiftbar/.sleep_mode" "travel"
         log "sleep_mode: travel"
