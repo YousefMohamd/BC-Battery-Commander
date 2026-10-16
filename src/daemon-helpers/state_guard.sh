@@ -37,22 +37,41 @@ guard_new_token() { printf '%s_%s_%s' "$$" "$(date +%s)" "$1"; }
 
 guard_token_matches() { [ -n "$1" ] && [ "$(guard_token)" = "$1" ]; }
 
+guard_token_write_locked() {
+    local mode="$1" token
+    token=$(guard_new_token "$mode") || return 1
+    printf '%s\n' "$token" > "$SG_TOKEN.tmp.$$" \
+        && mv "$SG_TOKEN.tmp.$$" "$SG_TOKEN" || return 1
+    printf '%s\n' "$mode" > "$SG_MODE.tmp.$$" \
+        && mv "$SG_MODE.tmp.$$" "$SG_MODE" || return 1
+    printf '%s\n' "$token"
+}
+
+guard_token_clear_locked() {
+    rm -f "$SG_TOKEN"
+    printf 'idle\n' > "$SG_MODE.tmp.$$' \
+        && mv "$SG_MODE.tmp.$$" "$SG_MODE"
+}
+
 guard_session_begin() {
     local mode="$1" token
     guard_lock || return 1
-    token=$(guard_new_token "$mode")
-    printf '%s\n' "$token" > "$SG_TOKEN.tmp.$$" &&
-        mv "$SG_TOKEN.tmp.$$" "$SG_TOKEN" || { guard_unlock; return 1; }
-    printf '%s\n' "$mode" > "$SG_MODE.tmp.$$" &&
-        mv "$SG_MODE.tmp.$$" "$SG_MODE" || { guard_unlock; return 1; }
+    token=$(guard_token_write_locked "$mode") || {
+        guard_unlock
+        return 1
+    }
     guard_unlock
     printf '%s\n' "$token"
 }
 
 guard_session_end() {
     guard_lock || return 1
-    guard_token_matches "$1" || { guard_unlock; return 1; }
-    rm -f "$SG_TOKEN"
-    printf 'idle\n' > "$SG_MODE.tmp.$$" && mv "$SG_MODE.tmp.$$" "$SG_MODE"
+    guard_token_matches "$1" || {
+        guard_unlock
+        return 1
+    }
+    guard_token_clear_locked
+    local result=$?
     guard_unlock
+    return "$result"
 }
