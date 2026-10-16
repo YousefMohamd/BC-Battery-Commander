@@ -828,6 +828,8 @@ AS
         sudo pkill -9 -f "battopt charge" 2>/dev/null || true
         sudo pkill -9 -f "battopt discharge" 2>/dev/null || true
         sudo pkill -9 -f "battopt calibrate" 2>/dev/null || true
+        sudo pkill -9 -f "sd_watcher.sh" 2>/dev/null || true
+        sudo pkill -9 -f "charge_full" 2>/dev/null || true
         sudo -n "$BAT" charge stop >/dev/null 2>&1 || true
         sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
         sudo -n "$BAT" calibrate stop >/dev/null 2>&1 || true
@@ -914,10 +916,18 @@ AS
         else
             # Charge/Hold path
             sd_session_invalidate
-            echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
+            HTOK=$(guard_session_begin hold)
+            [ -n "$HTOK" ] || { release; exit 1; }
             apply_intent
-            log "limit_custom: applied $U/$L (PCT=$CUR, will charge, active_mode=idle)"
-            notify "BattOpt" "Limit set ${U}% / ${L}%"
+            guard_session_end "$HTOK" 2>/dev/null || true
+            V=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+            if [ "$V" = "$U" ]; then
+                log "limit_custom: applied $U/$L (PCT=$CUR, SMC=$V)"
+                notify "BattOpt" "Limit set ${U}% / ${L}%"
+            else
+                log "limit_custom: FAILED $U/$L (SMC=$V)"
+                notify "BattOpt" "Limit failed (SMC=$V)"
+            fi
         fi
         
         release ;;
