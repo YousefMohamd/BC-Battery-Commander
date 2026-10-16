@@ -5,8 +5,6 @@
 LOG="$HOME/.battopt-swiftbar/actions.log"
 FLAG="$HOME/.battopt-swiftbar/.power_saver"
 
-[ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
-
 log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 
 apply_delays() {
@@ -14,13 +12,23 @@ apply_delays() {
     local high=3600 low=3600 auto=3600 legacy=3600
 
     case "$profile" in
-        long_battery|long_ac|travel|download)
+        long_battery|long_ac)
+            high=3600
+            low=3600
+            auto=3600
+            legacy=3600
+            ;;
+        travel|download)
             high=14400
             low=14400
-            auto=14400
+            auto=0
             legacy=14400
             ;;
         active_battery|active_ac|default|"")
+            high=1800
+            low=1800
+            auto=1800
+            legacy=1800
             ;;
         *)
             log "apply_delays: unknown profile '$profile'; using defaults"
@@ -45,6 +53,7 @@ case "$1" in
         enforce_sleep_policy
         ;;
     on)
+        [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
         log "power_saver: ON"
         # ARCH_CHECK
         ARCH=$(uname -m)
@@ -70,6 +79,7 @@ case "$1" in
         echo "Power Saver: ENABLED"
         ;;
     off)
+        [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
         log "power_saver: OFF"
         sudo -n /usr/bin/pmset -a powernap 1
         sudo -n /usr/bin/pmset -a womp 1

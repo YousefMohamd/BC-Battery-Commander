@@ -10,8 +10,6 @@ CFG="$DASH/sleep_manager.conf"
 log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 
 # ── Config (can be overridden by user) ──
-LONG_SLEEP_THRESHOLD="${LONG_SLEEP_THRESHOLD:-3600}"   # 1 hour
-SHORT_SLEEP_THRESHOLD="${SHORT_SLEEP_THRESHOLD:-300}"  # 5 min
 
 # Load overrides
 [ -f "$CFG" ] && source "$CFG"
