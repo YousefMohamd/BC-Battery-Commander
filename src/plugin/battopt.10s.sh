@@ -459,11 +459,16 @@ esac
 
 echo "Quick Actions | size=11 color=#007AFF disabled=true"
 echo "Power Mode — ${POWER_MODE} | size=14 color=#FFFFFF"
-echo "-- ${M_FAST}Fast Sleep · 5/5/15 · office | bash=$DISPATCH param1=power_mode_fast terminal=false refresh=true size=12"
-echo "-- ${M_BAL}Balanced · 18/10/15 · daily | bash=$DISPATCH param1=power_mode_balanced terminal=false refresh=true size=12"
-echo "-- ${M_AWK}Always Awake · AC only · presentations | bash=$DISPATCH param1=power_mode_awake terminal=false refresh=true size=12"
-echo "-- ${M_DP}Deep Only · immediate · travel | bash=$DISPATCH param1=power_mode_deep terminal=false refresh=true size=12"
-echo "-- ${M_CUS}Set Custom Values… | bash=$DISPATCH param1=power_mode_custom terminal=false refresh=true size=12"
+echo "-- ${M_FAST} Fast Sleep | bash=$DISPATCH param1=power_mode_fast terminal=false refresh=true size=12"
+echo "-- 5/5/15 · office profile | size=9 color=#909090 disabled=true"
+echo "-- ${M_BAL} Balanced | bash=$DISPATCH param1=power_mode_balanced terminal=false refresh=true size=12"
+echo "-- 18/10/15 · daily use | size=9 color=#909090 disabled=true"
+echo "-- ${M_AWK} Always Awake | bash=$DISPATCH param1=power_mode_awake terminal=false refresh=true size=12"
+echo "-- AC required · presentations | size=9 color=#909090 disabled=true"
+echo "-- ${M_DP} Deep Only | bash=$DISPATCH param1=power_mode_deep terminal=false refresh=true size=12"
+echo "-- Immediate sleep · travel | size=9 color=#909090 disabled=true"
+echo "-- ${M_CUS} Set Custom Values… | bash=$DISPATCH param1=power_mode_custom terminal=false refresh=true size=12"
+echo "-- Configure manually | size=9 color=#909090 disabled=true"
 echo "-- Active: Bat ${SLEEP_VAL}/${DISPLAY_VAL}/${DISK_VAL}m · AC ${AC_SLEEP}m | size=10 color=#505050 disabled=true"
 echo "-- Usage: ${USE_WHEN} | size=10 color=#505050 disabled=true"
 # === SLEEP MODE SUBMENU ===
@@ -489,11 +494,16 @@ case "$SM_STATE" in
 esac
 
 echo "Sleep Mode — ${SM_TITLE} | size=14 color=#007AFF"
-echo "-- ${SM_DEF_MARK} Normal · macOS handles sleep | bash=$DISPATCH param1=sleep_mode_default terminal=false refresh=true size=12 ${SM_DEF_COLOR}"
-echo "-- ${SM_PRE_MARK} Presentation · never sleeps on AC | bash=$DISPATCH param1=sleep_mode_presentation terminal=false refresh=true size=12 ${SM_PRE_COLOR}"
-echo "-- ${SM_LT_MARK} Long Tasks · lid closed, AC required | bash=$DISPATCH param1=sleep_mode_download terminal=false refresh=true size=12 ${SM_LT_COLOR}"
-echo "-- ${SM_TRV_MARK} Travel · battery holds longer (4h) | bash=$DISPATCH param1=sleep_mode_travel terminal=false refresh=true size=12 ${SM_TRV_COLOR}"
-echo "-- Prepare for Sleep · closes audio apps | bash=$DISPATCH param1=arm_sleep terminal=false refresh=true size=12 color=#007AFF"
+echo "-- ${SM_DEF_MARK} Normal | bash=$DISPATCH param1=sleep_mode_default terminal=false refresh=true size=12 ${SM_DEF_COLOR}"
+echo "-- macOS handles sleep | size=9 color=#909090 disabled=true"
+echo "-- ${SM_PRE_MARK} Presentation | bash=$DISPATCH param1=sleep_mode_presentation terminal=false refresh=true size=12 ${SM_PRE_COLOR}"
+echo "-- Never sleeps on AC | size=9 color=#909090 disabled=true"
+echo "-- ${SM_LT_MARK} Long Tasks | bash=$DISPATCH param1=sleep_mode_download terminal=false refresh=true size=12 ${SM_LT_COLOR}"
+echo "-- Lid closed · AC required | size=9 color=#909090 disabled=true"
+echo "-- ${SM_TRV_MARK} Travel | bash=$DISPATCH param1=sleep_mode_travel terminal=false refresh=true size=12 ${SM_TRV_COLOR}"
+echo "-- Battery holds longer (4h) | size=9 color=#909090 disabled=true"
+echo "-- Prepare for Sleep | bash=$DISPATCH param1=arm_sleep terminal=false refresh=true size=12 color=#007AFF"
+echo "-- Close audio apps · arm sleep | size=9 color=#909090 disabled=true"
 # === SLEEP OVERRIDES ===
 ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null || echo "idle")
 if [ "$ACTIVE_MODE" = "hold" ]; then
@@ -550,10 +560,13 @@ fi
 
 # Hold Mode — header with submenu
 echo "Hold Mode — ${HMODE_TITLE} | size=13 color=#FFFFFF"
-echo "-- How battery is held: | size=10 color=#505050 disabled=true"
-echo "-- With Sailing — battery oscillates ${LOWER}-${UPPER}% | bash=$DISPATCH param1=sail_on terminal=false refresh=true checked=${RADIO_SAIL} size=12"
-echo "-- Static Hold — battery frozen at ${UPPER}% | bash=$DISPATCH param1=sail_off terminal=false refresh=true checked=${RADIO_STATIC} size=12"
-echo "-- ---"
+echo "-- How battery is held: | size=10 color=#909090 disabled=true"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
+echo "-- With Sailing | bash=$DISPATCH param1=sail_on terminal=false refresh=true checked=${RADIO_SAIL} size=12"
+echo "-- Battery oscillates ${LOWER}-${UPPER}% | size=9 color=#909090 disabled=true"
+echo "-- Static Hold | bash=$DISPATCH param1=sail_off terminal=false refresh=true checked=${RADIO_STATIC} size=12"
+echo "-- Battery frozen at ${UPPER}% | size=9 color=#909090 disabled=true"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 echo "-- Gap: 5% | bash=$DISPATCH param1=sail_gap_set param2=5 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "5" ] && echo true || echo false) size=12"
 echo "-- Gap: 10% | bash=$DISPATCH param1=sail_gap_set param2=10 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "10" ] && echo true || echo false) size=12"
 echo "-- Gap: 15% | bash=$DISPATCH param1=sail_gap_set param2=15 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "15" ] && echo true || echo false) size=12"
@@ -614,6 +627,7 @@ echo "Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false"
 echo "Open BattOpt Logs | bash=/usr/bin/open param1=/Library/Logs/battopt/ terminal=false"
 echo "Open Actions Log | bash=$DISPATCH param1=open_actions_log terminal=false"
 echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
+echo "-- Restart daemon to reset trial | size=9 color=#909090 disabled=true"
 
 LOGIN_STATE=$(osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -c "BattOpt" || true)
 if [ "$LOGIN_STATE" -gt 0 ]; then
@@ -728,7 +742,7 @@ if [ -f "$SAIL_STATE" ]; then
     fi
 fi
 echo "-- ─────"
-echo "-- ---"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 if [ "$PSAVER_STATE" = "ON" ]; then
     echo "-- ✅ Power Saver: ENABLED | size=11 color=#30D158"
 else
@@ -761,10 +775,10 @@ elif [ "$HIBERNATE" = "3" ]; then
 else
     echo "-- ℹ️ Hibernatemode: ${HIBERNATE} | size=11 $GRAY"
 fi
-echo "-- ---"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 echo "-- 📊 Wake events: ${WAKE_COUNT} | size=11 $GRAY"
 echo "-- 🔌 External USB: ${USB_EXT} | size=11 $GRAY"
-echo "-- ---"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 ISSUE_LIST=""
 [ "$PSAVER_STATE" = "OFF" ] && ISSUE_LIST="${ISSUE_LIST}PS off; "
 [ "$POWERNAP" != "0" ] && ISSUE_LIST="${ISSUE_LIST}PN on; "
@@ -775,15 +789,15 @@ if [ -z "$ISSUE_LIST" ]; then
 else
     echo "-- ⚠️ Issues: ${ISSUE_LIST} | size=11 color=#FF9500"
 fi
-echo "-- ---"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 if [ "$PSAVER_STATE" = "ON" ]; then
-    echo "-- 🔄 Disable Power Saver | bash=$DISPATCH param1=power_saver_off terminal=false refresh=true"
+    echo "-- Disable Power Saver | bash=$DISPATCH param1=power_saver_off terminal=false refresh=true size=12"
 else
-    echo "-- ⚡ ENABLE Power Saver | bash=$DISPATCH param1=power_saver_on terminal=false refresh=true color=#30D158"
+    echo "-- Enable Power Saver | bash=$DISPATCH param1=power_saver_on terminal=false refresh=true color=#30D158 size=12"
 fi
-echo "-- 📄 Show Full Report… | bash=$DISPATCH param1=power_saver_report terminal=false"
-echo "-- 💾 Save Report to File | bash=$DISPATCH param1=sleep_report_save terminal=false refresh=true"
-echo "-- 📂 Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false"
+echo "-- Show Full Report | bash=$DISPATCH param1=power_saver_report terminal=false size=12"
+echo "-- Save Report to File | bash=$DISPATCH param1=sleep_report_save terminal=false refresh=true size=12"
+echo "-- Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false size=12"
 
 # ============ AUTO CLEANUP SECTION ============
 AUTO_STATE=$([ -f "$HOME/.battopt-swiftbar/.auto_cleanup" ] && echo "ON" || echo "OFF")
@@ -793,9 +807,9 @@ IDLE_MIN=$((IDLE / 1000000000 / 60))
 CLEANUP_DONE=$([ -f "$HOME/.battopt-swiftbar/.pre_sleep_done" ] && echo "YES" || echo "NO")
 
 if [ "$AUTO_STATE" = "ON" ]; then
-    echo "🧹 Auto Cleanup: ON ▶ | color=#30D158"
+    echo "Auto Cleanup: ON ▶ | color=#30D158"
 else
-    echo "🧹 Auto Cleanup: OFF ▶ | color=#909090"
+    echo "Auto Cleanup: OFF ▶ | color=#909090"
 fi
 echo "--    Auto-pauses background services when idle | size=10 $GRAY"
 echo "--    (Spotlight, Photos, Time Machine, VLC) | size=10 $GRAY"
@@ -804,34 +818,34 @@ echo "-- ⚙️ Services paused: Spotlight, Photos, TM, VLC | size=10 $GRAY"
 echo "-- ℹ️ Trigger: after 15 min idle | size=10 $GRAY"
 echo "-- ⏱️ Current idle: ${IDLE_MIN} min | size=11 $GRAY"
 echo "-- 📌 Last cleanup: ${CLEANUP_DONE} | size=11 $GRAY"
-echo "-- ---"
-echo "-- 🧹 Run Cleanup Now | bash=$DISPATCH param1=pre_sleep_now terminal=false refresh=true"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
+echo "-- Run Cleanup Now | bash=$DISPATCH param1=pre_sleep_now terminal=false refresh=true size=12"
 echo "--    Pause Spotlight, Photos, Time Machine, VLC now | size=10 $GRAY"
-echo "-- 🔄 Restore Services | bash=$DISPATCH param1=post_wake_now terminal=false refresh=true"
+echo "-- Restore Services | bash=$DISPATCH param1=post_wake_now terminal=false refresh=true size=12"
 echo "--    Resume all paused services | size=10 $GRAY"
 if [ "$AUTO_STATE" = "ON" ]; then
-    echo "-- ⏸️ Disable Auto Cleanup | bash=$DISPATCH param1=auto_cleanup_toggle terminal=false refresh=true"
+    echo "-- Disable Auto Cleanup | bash=$DISPATCH param1=auto_cleanup_toggle terminal=false refresh=true size=12"
     echo "--    Stop auto-cleanup only (other features keep working) | size=10 $GRAY"
 else
-    echo "-- ▶️ Enable Auto Cleanup | bash=$DISPATCH param1=auto_cleanup_toggle terminal=false refresh=true color=#30D158"
+    echo "-- Enable Auto Cleanup | bash=$DISPATCH param1=auto_cleanup_toggle terminal=false refresh=true color=#30D158 size=12"
     echo "--    Auto-pause services after 15 min idle | size=10 $GRAY"
 fi
 
 # ============ SYSTEM RESOURCES ============
 # ============ DEVELOPER TOOLS SECTION ============
-echo "🔧 Developer Tools ▶ | size=11 color=#007AFF"
-echo "-- 🩺 Project Health Check | bash=$DISPATCH param1=project_health terminal=false refresh=true"
+echo "Developer Tools ▶ | size=11 color=#007AFF"
+echo "-- Project Health Check | bash=$DISPATCH param1=project_health terminal=false refresh=true size=12"
 echo "--    Verify all components | size=10 color=#909090 disabled=true"
-echo "-- 🔀 Conflict Detection | bash=$DISPATCH param1=conflict_check terminal=false"
+echo "-- Conflict Detection | bash=$DISPATCH param1=conflict_check terminal=false size=12"
 echo "--    Find tools that clash | size=10 color=#909090 disabled=true"
-echo "-- 🔮 Predictive Analysis | bash=$DISPATCH param1=predictive terminal=false"
+echo "-- Predictive Analysis | bash=$DISPATCH param1=predictive terminal=false size=12"
 echo "--    Detect trends before problems | size=10 color=#909090 disabled=true"
-echo "-- 🔍 Process Monitor | bash=$DISPATCH param1=process_monitor terminal=false"
+echo "-- Process Monitor | bash=$DISPATCH param1=process_monitor terminal=false size=12"
 echo "--    Auto-fix process loops | size=10 color=#909090 disabled=true"
 
 # ============ LOGS SECTION ============
-echo "📋 Logs ▶ | size=11 color=#007AFF"
-echo "-- 📄 AI Diagnostic Bundle | bash=$DISPATCH param1=logs_ai_bundle terminal=false refresh=true color=#30D158"
+echo "Logs ▶ | size=11 color=#007AFF"
+echo "-- AI Diagnostic Bundle | bash=$DISPATCH param1=logs_ai_bundle terminal=false refresh=true color=#30D158 size=12"
 echo "--    Collects everything for AI analysis | size=10 $GRAY"
 echo "-- ─────"
 echo "-- Actions Log | bash=$DISPATCH param1=logs_actions terminal=false"
