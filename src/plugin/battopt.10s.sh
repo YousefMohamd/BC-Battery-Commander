@@ -63,7 +63,7 @@ notify_proactive_v2() {
     # Classify: CRITICAL bypasses quiet hours + daily cap? NO — max 3/day applies to ALL
     local is_critical=0
     case "$key" in
-        battery_critical|temp_critical|enforce_critical|daemon_recovery|hold_reached_*)
+        battery_critical|temp_critical|enforce_critical|daemon_recovery|hold_reached|hold_reached_*)
             is_critical=1 ;;
     esac
 
@@ -146,15 +146,6 @@ TRIAL=$(echo "$SNAP" | grep -oE "expire in [0-9]+ days" | grep -oE "[0-9]+")
 
 TEMP_INT=${TEMP%.*}
 HEALTH_INT=${HEALTH%.*}
-# Temperature color driven by APG state (temp + load combined)
-APG_STATE=$(cat "$HOME/.battopt-swiftbar/.apg_state" 2>/dev/null || echo "green")
-case "$APG_STATE" in
-    red)    TEMP_COLOR="color=#FF3B30" ;;
-    yellow) TEMP_COLOR="color=#FF9500" ;;
-    *)      TEMP_COLOR="color=#34C759" ;;
-esac
-[ -n "$TEMP_INT" ] && [ "$TEMP_INT" -ge 40 ] && TEMP_COLOR="color=orange"
-[ -n "$TEMP_INT" ] && [ "$TEMP_INT" -ge 45 ] && TEMP_COLOR="color=red"
 
 GRAY="color=#909090"
 ORANGE="color=#FF9500"
@@ -255,7 +246,7 @@ elif [ "$PROC_CAL_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "calibration" ]; then
     ICON="⚡"
 elif [ "$PROC_CH_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "charge_full" ]; then
     ICON="⚡"
-elif [ "$ICON_ISCHG" = "Yes" ] && [ "$ICON_CHCUR" -gt 50 ] 2>/dev/null; then
+elif [ "$ICON_ISCHG" = "Yes" ]; then
     ICON="⚡"
 elif [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
     ICON="🔌"

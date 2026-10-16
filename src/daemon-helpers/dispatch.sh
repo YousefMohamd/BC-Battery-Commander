@@ -590,6 +590,14 @@ CFGEOF
         acquire; ensure_clean
         log "disable all"
         run_with_retry limit disable >> "$LOG" 2>&1
+        LAST_UPPER=100
+        LAST_LOWER=99
+        SAILING=false
+        SAIL_GAP=1
+        save_cfg
+        rm -f "$HOME/.battopt-swiftbar/.sd_session"
+        [ -n "$(guard_token 2>/dev/null)" ] && guard_session_end "$(guard_token)" 2>/dev/null
+        echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
         release ;;
 
     charge_full)
@@ -622,6 +630,7 @@ CFGEOF
             D="'"$HOME"'/.battopt-swiftbar"
             T="'"$TOKEN"'"
             source "$D/state_guard.sh" 2>/dev/null
+            COMPLETED=0
             for i in $(seq 1 720); do
                 sleep 10
                 P=$(sudo -n "$B" status 2>/dev/null | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+")
@@ -637,11 +646,18 @@ LAST_LOWER=98
 SAILING=false
 SAIL_GAP=1
 CFG
-                    # The watcher has no captured session token to validate here.
+                    sudo -n "$B" charge stop >/dev/null 2>&1
+                    guard_session_end "$T" 2>/dev/null
                     echo "[$(date +%H:%M:%S)] charge_full: reached 99%, config synced to 99/98" >> "$L"
+                    COMPLETED=1
                     break
                 fi
             done
+            if [ "$COMPLETED" -eq 0 ]; then
+                echo "[$(date +%H:%M:%S)] charge_full: timeout — stopping charge and ending session" >> "$L"
+                sudo -n "$B" charge stop >/dev/null 2>&1
+                guard_session_end "$T" 2>/dev/null
+            fi
         ' >/dev/null 2>&1 &
         ;;
 
@@ -785,8 +801,9 @@ AS
         echo "discharge" > "$HOME/.battopt-swiftbar/.active_mode"
         rm -f "$HOME/.battopt-swiftbar/.hold_override" "$HOME/.battopt-swiftbar/.hold_token" "$HOME/.battopt-swiftbar/.pre_hold_config"
         soft_stop
-        # Layer 18e: create session so guardian sees it as legitimate
-        SD_ID=$(sd_session_new)
+        # Layer 18e: create a guarded session so guardian sees it as legitimate.
+        SD_ID=$(guard_session_begin discharge)
+        [ -n "$SD_ID" ] || { release; exit 1; }
         echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"
         log "smart_discharge: target=$T mode=$MODE low=$LOW active_mode=discharge session=$SD_ID"
         # Launch persistent watcher
