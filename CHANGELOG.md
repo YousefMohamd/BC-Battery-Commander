@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v1.6.2] - 2026-10-16
+
+### Changed
+- Atomic intent pattern: single `intent_apply()` mutation path for all battery actions
+- Refactored 11 cases: `limit_custom`, `sail_on`, `sail_off`, `sail_gap_set`, `stop_now`, `remove_limit_hold`, `disable_limit`, `charge_full`, `smart_discharge`, `calibrate`, `cal_stop`
+- All mutations now kill transients + clear session + verify SMC before notifying
+- `state_guard.sh`: new helpers `guard_token_write_locked` / `guard_token_clear_locked` (caller-must-hold-lock variants)
+
+### Fixed
+- Menu action conflicts eliminated (no more race between buttons)
+- Orphan `battopt charge/discharge` processes after action switching
+- Stale `.active_token` after shutdown
+
+### Removed
+- Dead code: `apply_intent`, `hold_at_current`, `sd_session_new`, `sd_session_current` (148 lines)
+
+
 ## [v1.6.0] - 2026-10-16
 
 ### Added
