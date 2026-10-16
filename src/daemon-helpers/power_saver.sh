@@ -9,7 +9,41 @@ FLAG="$HOME/.battopt-swiftbar/.power_saver"
 
 log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 
+apply_delays() {
+    local profile="$1"
+    local high=3600 low=3600 auto=3600 legacy=3600
+
+    case "$profile" in
+        long_battery|long_ac|travel|download)
+            high=14400
+            low=14400
+            auto=14400
+            legacy=14400
+            ;;
+        active_battery|active_ac|default|"")
+            ;;
+        *)
+            log "apply_delays: unknown profile '$profile'; using defaults"
+            ;;
+    esac
+
+    sudo -n /usr/bin/pmset -a standbydelayhigh "$high"
+    sudo -n /usr/bin/pmset -a standbydelaylow "$low"
+    sudo -n /usr/bin/pmset -a autopoweroffdelay "$auto"
+    sudo -n /usr/bin/pmset -a standbydelay "$legacy"
+}
+
+enforce_sleep_policy() {
+    apply_delays default
+}
+
 case "$1" in
+    apply-delays)
+        apply_delays "$2"
+        ;;
+    enforce-sleep-policy)
+        enforce_sleep_policy
+        ;;
     on)
         log "power_saver: ON"
         # ARCH_CHECK
@@ -20,10 +54,7 @@ case "$1" in
         sudo -n /usr/bin/pmset -a tcpkeepalive 0   # No TCP keep-alive during sleep
         sudo -n /usr/bin/pmset -a acwake 0         # No wake on AC change
         sudo -n /usr/bin/pmset -a lidwake 1        # Wake only on lid open
-        # Faster transition to hibernate
-        sudo -n /usr/bin/pmset -a standbydelay 900
-        sudo -n /usr/bin/pmset -a standbydelayhigh 900
-        sudo -n /usr/bin/pmset -a standbydelaylow 900
+        enforce_sleep_policy
         sudo -n /usr/bin/pmset -a standby 1
         # Disk sleep (silences warnings)
         sudo -n /usr/bin/pmset -a disksleep 10
@@ -35,7 +66,6 @@ case "$1" in
             sudo -n /usr/bin/pmset -a hibernatemode 25
         fi
         sudo -n /usr/bin/pmset -a autopoweroff 1
-        sudo -n /usr/bin/pmset -a autopoweroffdelay 900
         printf "ENABLED" > "$FLAG.tmp" && mv "$FLAG.tmp" "$FLAG"
         echo "Power Saver: ENABLED"
         ;;
@@ -46,9 +76,7 @@ case "$1" in
         sudo -n /usr/bin/pmset -a tcpkeepalive 1
         sudo -n /usr/bin/pmset -a acwake 1
         sudo -n /usr/bin/pmset -a lidwake 1
-        sudo -n /usr/bin/pmset -a standbydelay 4200
-        sudo -n /usr/bin/pmset -a standbydelayhigh 4200
-        sudo -n /usr/bin/pmset -a standbydelaylow 4200
+        enforce_sleep_policy
         sudo -n /usr/bin/pmset -a hibernatemode 3
         sudo -n /usr/bin/pmset -a autopoweroff 0
         sudo -n /usr/bin/pmset -a standby 0

@@ -21,6 +21,16 @@ log() { echo "[$(date '+%H:%M:%S')] arm_sleep: $1" >> "$LOG"; }
 
 log "=== ARM SLEEP START ==="
 
+# Keep the selected sleep policy when preparing to sleep.
+SLEEP_PROFILE=$(cat "$HOME/.battopt-swiftbar/.sleep_profile" 2>/dev/null)
+SLEEP_MODE=$(cat "$HOME/.battopt-swiftbar/.sleep_mode" 2>/dev/null)
+case "$SLEEP_MODE" in
+    travel)   SLEEP_PROFILE=travel ;;
+    download) SLEEP_PROFILE=download ;;
+esac
+"$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$SLEEP_PROFILE"
+log "Applied sleep delay profile: ${SLEEP_PROFILE:-default}"
+
 # 1. Kill audio apps completely (not just STOP)
 for app in VLC Spotify Music; do
     if pgrep -x "$app" >/dev/null 2>&1; then

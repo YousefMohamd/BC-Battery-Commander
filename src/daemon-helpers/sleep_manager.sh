@@ -18,8 +18,6 @@ SHORT_SLEEP_THRESHOLD="${SHORT_SLEEP_THRESHOLD:-300}"  # 5 min
 
 # ── Detect capabilities ──
 CAP=$(pmset -g 2>/dev/null)
-HAS_STANDBYDELAY=$(echo "$CAP" | grep -c standbydelay)
-HAS_AUTOPOWEROFF=$(echo "$CAP" | grep -c autopoweroff)
 HAS_POWERNAP=$(echo "$CAP" | grep -c powernap)
 HAS_WOMP=$(echo "$CAP" | grep -c womp)
 
@@ -48,41 +46,27 @@ else
     NEW_PROFILE="active_ac"
 fi
 
-# ── Skip if no change ──
-[ "$NEW_PROFILE" = "$CURRENT_PROFILE" ] && exit 0
-
 log "profile: $CURRENT_PROFILE → $NEW_PROFILE (Ext=$EXT Clamshell=$CLAMSHELL)"
 
-# ── Apply profile ──
+# Apply the selected profile on every run so stale pmset values are corrected.
+"$DASH/power_saver.sh" apply-delays "$NEW_PROFILE"
+
+# ── Apply profile-specific settings ──
 case "$NEW_PROFILE" in
     long_battery)
-        # Defer standby 1 hour — respects user's preference
-        if [ "$HAS_STANDBYDELAY" -gt 0 ]; then
-            sudo -n /usr/bin/pmset -b standbydelayhigh "$LONG_SLEEP_THRESHOLD" 2>/dev/null
-            sudo -n /usr/bin/pmset -b standbydelaylow "$LONG_SLEEP_THRESHOLD" 2>/dev/null
-            log "  set standbydelay=$LONG_SLEEP_THRESHOLD (battery)"
-        fi
-        if [ "$HAS_AUTOPOWEROFF" -gt 0 ]; then
-            sudo -n /usr/bin/pmset -b autopoweroffdelay 1800 2>/dev/null
-            log "  set autopoweroffdelay=1800"
-        fi
+        # On battery + lid closed, reduce wake sources.
         [ "$HAS_POWERNAP" -gt 0 ] && sudo -n /usr/bin/pmset -b powernap 0 2>/dev/null
         [ "$HAS_WOMP" -gt 0 ] && sudo -n /usr/bin/pmset -b womp 0 2>/dev/null
+        log "  applied long_battery delay profile"
         ;;
     active_battery)
-        # Normal active battery — short standby delay
-        if [ "$HAS_STANDBYDELAY" -gt 0 ]; then
-            sudo -n /usr/bin/pmset -b standbydelayhigh "$SHORT_SLEEP_THRESHOLD" 2>/dev/null
-            sudo -n /usr/bin/pmset -b standbydelaylow "$SHORT_SLEEP_THRESHOLD" 2>/dev/null
-            log "  set standbydelay=$SHORT_SLEEP_THRESHOLD (active battery)"
-        fi
+        log "  applied active_battery delay profile"
         ;;
     long_ac)
-        # AC long — no hibernate needed, just keep responsive
-        log "  AC + lid closed — no changes needed"
+        log "  applied long_ac delay profile"
         ;;
     active_ac)
-        log "  active AC — no changes needed"
+        log "  applied active_ac delay profile"
         ;;
 esac
 
