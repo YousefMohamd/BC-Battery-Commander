@@ -34,3 +34,9 @@
 ## SDLC Progress: 21/58 stages (36%)
 
 See detailed stage matrix in FUTURE_DEVELOPMENT.md
+
+## v1.6.3 — Requirements Doc
+
+- [x] `docs/REQUIREMENTS.md` — hardware/OS compatibility matrix
+- [ ] Link from README.md (top of file)
+- [ ] Link from install.sh (post-install message)
