@@ -9,7 +9,7 @@ if ! command -v notify >/dev/null 2>&1; then
         local ICON="$HOME/.battopt-swiftbar/icons/battopt.png"
         if [ -x "$NOTIFIER" ]; then
             [ -f "$ICON" ] && nohup "$NOTIFIER" -title "$1" -message "$2" -group battopt -timeout 3 >/dev/null 2>&1 &
-        disown
+            disown
         fi
     }
 fi
@@ -25,11 +25,28 @@ log "=== ARM SLEEP START ==="
 SLEEP_PROFILE=$(cat "$HOME/.battopt-swiftbar/.sleep_profile" 2>/dev/null)
 SLEEP_MODE=$(cat "$HOME/.battopt-swiftbar/.sleep_mode" 2>/dev/null)
 case "$SLEEP_MODE" in
-    travel)   SLEEP_PROFILE=travel ;;
-    download) SLEEP_PROFILE=download ;;
+    travel)
+        APPLY_PROFILE=travel
+        ;;
+    download)
+        APPLY_PROFILE=long
+        ;;
+    *)
+        case "$SLEEP_PROFILE" in
+            active_ac|active_battery)
+                APPLY_PROFILE=default
+                ;;
+            long_ac|long_battery)
+                APPLY_PROFILE=long
+                ;;
+            *)
+                APPLY_PROFILE=default
+                ;;
+        esac
+        ;;
 esac
-"$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$SLEEP_PROFILE"
-log "Applied sleep delay profile: ${SLEEP_PROFILE:-default}"
+"$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
+log "Applied sleep delay profile: $APPLY_PROFILE"
 
 # 1. Kill audio apps completely (not just STOP)
 for app in VLC Spotify Music; do

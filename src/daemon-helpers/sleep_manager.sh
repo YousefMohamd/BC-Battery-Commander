@@ -34,7 +34,6 @@ CURRENT_PROFILE=""
 
 NEW_PROFILE=""
 if [ "$EXT" = "No" ] && [ "$CLAMSHELL" = "Yes" ]; then
-    # On battery + lid closed → long sleep profile
     NEW_PROFILE="long_battery"
 elif [ "$EXT" = "No" ] && [ "$CLAMSHELL" = "No" ]; then
     NEW_PROFILE="active_battery"
@@ -44,15 +43,18 @@ else
     NEW_PROFILE="active_ac"
 fi
 
-log "profile: $CURRENT_PROFILE → $NEW_PROFILE (Ext=$EXT Clamshell=$CLAMSHELL)"
+case "$NEW_PROFILE" in
+    active_ac|active_battery) MAPPED_PROFILE="default" ;;
+    long_ac|long_battery)     MAPPED_PROFILE="long" ;;
+    *)                        MAPPED_PROFILE="default" ;;
+esac
 
-# Apply the selected profile on every run so stale pmset values are corrected.
-"$DASH/power_saver.sh" apply-delays "$NEW_PROFILE"
+log "profile: $CURRENT_PROFILE → $NEW_PROFILE (Ext=$EXT Clamshell=$CLAMSHELL)"
+"$DASH/power_saver.sh" apply-delays "$MAPPED_PROFILE"
 
 # ── Apply profile-specific settings ──
 case "$NEW_PROFILE" in
     long_battery)
-        # On battery + lid closed, reduce wake sources.
         [ "$HAS_POWERNAP" -gt 0 ] && sudo -n /usr/bin/pmset -b powernap 0 2>/dev/null
         [ "$HAS_WOMP" -gt 0 ] && sudo -n /usr/bin/pmset -b womp 0 2>/dev/null
         log "  applied long_battery delay profile"

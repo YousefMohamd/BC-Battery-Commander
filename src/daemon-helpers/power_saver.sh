@@ -4,41 +4,67 @@
 
 LOG="$HOME/.battopt-swiftbar/actions.log"
 FLAG="$HOME/.battopt-swiftbar/.power_saver"
+PMSET_BIN="${PMSET_BIN:-/usr/bin/pmset}"
 
 log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 
 apply_delays() {
-    local profile="$1"
-    local high=3600 low=3600 auto=3600 legacy=3600
+    local profile="${1:-default}"
+    local battery_high battery_low battery_auto
+    local ac_high ac_low ac_auto ac_sleep
 
     case "$profile" in
-        long_battery|long_ac)
-            high=3600
-            low=3600
-            auto=3600
-            legacy=3600
+        default)
+            battery_high=2700
+            battery_low=2700
+            battery_auto=1800
+            ac_high=3600
+            ac_low=3600
+            ac_auto=3600
+            ac_sleep=90
             ;;
-        travel|download)
-            high=14400
-            low=14400
-            auto=0
-            legacy=14400
+        long)
+            battery_high=3600
+            battery_low=3600
+            battery_auto=1800
+            ac_high=7200
+            ac_low=7200
+            ac_auto=3600
+            ac_sleep=90
             ;;
-        active_battery|active_ac|default|"")
-            high=1800
-            low=1800
-            auto=1800
-            legacy=1800
+        travel)
+            battery_high=3600
+            battery_low=3600
+            battery_auto=1800
+            ac_high=10800
+            ac_low=10800
+            ac_auto=3600
+            ac_sleep=90
             ;;
         *)
-            log "apply_delays: unknown profile '$profile'; using defaults"
+            profile=default
+            battery_high=2700
+            battery_low=2700
+            battery_auto=1800
+            ac_high=3600
+            ac_low=3600
+            ac_auto=3600
+            ac_sleep=90
             ;;
     esac
 
-    sudo -n /usr/bin/pmset -a standbydelayhigh "$high"
-    sudo -n /usr/bin/pmset -a standbydelaylow "$low"
-    sudo -n /usr/bin/pmset -a autopoweroffdelay "$auto"
-    sudo -n /usr/bin/pmset -a standbydelay "$legacy"
+    sudo -n "$PMSET_BIN" -b standbydelayhigh "$battery_high"
+    sudo -n "$PMSET_BIN" -b standbydelaylow "$battery_low"
+    sudo -n "$PMSET_BIN" -b autopoweroffdelay "$battery_auto"
+    sudo -n "$PMSET_BIN" -b standbydelay "$battery_high"
+
+    sudo -n "$PMSET_BIN" -c standbydelayhigh "$ac_high"
+    sudo -n "$PMSET_BIN" -c standbydelaylow "$ac_low"
+    sudo -n "$PMSET_BIN" -c autopoweroffdelay "$ac_auto"
+    sudo -n "$PMSET_BIN" -c standbydelay "$ac_high"
+    sudo -n "$PMSET_BIN" -c sleep "$ac_sleep"
+
+    log "apply_delays: profile=$profile battery=$battery_high/$battery_low/$battery_auto ac=$ac_high/$ac_low/$ac_auto sleep=$ac_sleep"
 }
 
 enforce_sleep_policy() {
@@ -47,7 +73,7 @@ enforce_sleep_policy() {
 
 case "$1" in
     apply-delays)
-        apply_delays "$2"
+        apply_delays "${2:-default}"
         ;;
     enforce-sleep-policy)
         enforce_sleep_policy
@@ -55,41 +81,35 @@ case "$1" in
     on)
         [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
         log "power_saver: ON"
-        # ARCH_CHECK
         ARCH=$(uname -m)
-        # Disable wake sources
-        sudo -n /usr/bin/pmset -a powernap 0       # Prevent Power Nap wakeups
-        sudo -n /usr/bin/pmset -a womp 0           # No wake-on-magic-packet
-        sudo -n /usr/bin/pmset -a tcpkeepalive 0   # No TCP keep-alive during sleep
-        sudo -n /usr/bin/pmset -a acwake 0         # No wake on AC change
-        sudo -n /usr/bin/pmset -a lidwake 1        # Wake only on lid open
+        sudo -n "$PMSET_BIN" -a powernap 0
+        sudo -n "$PMSET_BIN" -a womp 0
+        sudo -n "$PMSET_BIN" -a tcpkeepalive 0
+        sudo -n "$PMSET_BIN" -a acwake 0
+        sudo -n "$PMSET_BIN" -a lidwake 1
         enforce_sleep_policy
-        sudo -n /usr/bin/pmset -a standby 1
-        # Disk sleep (silences warnings)
-        sudo -n /usr/bin/pmset -a disksleep 10
-        # Cancel scheduled system wakes (RTC/Maintenance)
-        sudo -n /usr/bin/pmset schedule cancelall 2>/dev/null
-        # Deep hibernate (RAM → Disk)
-        # Only for Intel Macs
+        sudo -n "$PMSET_BIN" -a standby 1
+        sudo -n "$PMSET_BIN" -a disksleep 10
+        sudo -n "$PMSET_BIN" schedule cancelall 2>/dev/null
         if [ "$ARCH" = "x86_64" ]; then
-            sudo -n /usr/bin/pmset -a hibernatemode 25
+            sudo -n "$PMSET_BIN" -a hibernatemode 25
         fi
-        sudo -n /usr/bin/pmset -a autopoweroff 1
+        sudo -n "$PMSET_BIN" -a autopoweroff 1
         printf "ENABLED" > "$FLAG.tmp" && mv "$FLAG.tmp" "$FLAG"
         echo "Power Saver: ENABLED"
         ;;
     off)
         [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
         log "power_saver: OFF"
-        sudo -n /usr/bin/pmset -a powernap 1
-        sudo -n /usr/bin/pmset -a womp 1
-        sudo -n /usr/bin/pmset -a tcpkeepalive 1
-        sudo -n /usr/bin/pmset -a acwake 1
-        sudo -n /usr/bin/pmset -a lidwake 1
+        sudo -n "$PMSET_BIN" -a powernap 1
+        sudo -n "$PMSET_BIN" -a womp 1
+        sudo -n "$PMSET_BIN" -a tcpkeepalive 1
+        sudo -n "$PMSET_BIN" -a acwake 1
+        sudo -n "$PMSET_BIN" -a lidwake 1
         enforce_sleep_policy
-        sudo -n /usr/bin/pmset -a hibernatemode 3
-        sudo -n /usr/bin/pmset -a autopoweroff 0
-        sudo -n /usr/bin/pmset -a standby 0
+        sudo -n "$PMSET_BIN" -a hibernatemode 3
+        sudo -n "$PMSET_BIN" -a autopoweroff 0
+        sudo -n "$PMSET_BIN" -a standby 0
         rm -f "$FLAG"
         echo "Power Saver: DISABLED"
         ;;
