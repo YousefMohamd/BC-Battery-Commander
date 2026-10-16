@@ -49,7 +49,7 @@ guard_token_write_locked() {
 
 guard_token_clear_locked() {
     rm -f "$SG_TOKEN"
-    printf 'idle\n' > "$SG_MODE.tmp.$$' \
+    printf 'idle\n' > "$SG_MODE.tmp.$$" \
         && mv "$SG_MODE.tmp.$$" "$SG_MODE"
 }
 
