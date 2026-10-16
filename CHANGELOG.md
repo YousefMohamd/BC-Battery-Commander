@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [v1.6.5] - 2026-10-16
+
+### Added
+- Custom Limit: 2-step dialog (limit → Hold/Sailing → gap if Sailing)
+- Plugin: Hold Mode (static) and Sailing (with gaps) are now separate submenus
+- guardian.sh: LAYER3 with config-as-source-of-truth + 300s hold-timeout
+- `src/agents/swiftbar_watchdog.sh`: direct-binary launch (bypasses Gatekeeper -600)
+
+### Fixed
+- SwiftBar `open -a` failure on unsigned SwiftBar.app (macOS 10.15 Gatekeeper)
+- Watchdog relaunch loop — now PPID=1, 5-min cooldown after 2 fails, respects .user_shutdown
+- intent_apply limit now accepts MODE + GAP so sailing/hold choice is preserved
+- Menu refresh after actions (swiftbar:// URL + EXIT trap)
+
+### Changed
+- Watchdog StartInterval 60→120s
+
+
 ## [v1.6.2] - 2026-10-16
 
 ### Changed
