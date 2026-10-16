@@ -376,9 +376,6 @@ echo "---"
 
 echo "Charge: ${PCT}% | size=11"
 echo "Mode: ${MODE} | size=11"
-if [ "$SAILING" = "true" ] && [ -n "$UPPER" ] && [ -n "$LOWER" ]; then
-    echo "Sailing · ${LOWER}-${UPPER}% | size=10 color=#909090"
-fi
 echo "Health: ${HEALTH}% - ${CYCLES} cycles | size=11 $GRAY"
 if [ -n "$UPPER" ] && [ -n "$LOWER" ]; then
     echo "Active Limit: ${UPPER}% / ${LOWER}% | size=11 $GRAY"
@@ -460,15 +457,15 @@ esac
 
 echo "Quick Actions | size=11 color=#007AFF disabled=true"
 echo "Power Mode — ${POWER_MODE} | size=14 color=#FFFFFF"
-echo "-- ${M_FAST} Fast Sleep | bash=$DISPATCH param1=power_mode_fast terminal=false refresh=true size=12"
+echo "-- Fast Sleep | bash=$DISPATCH param1=power_mode_fast terminal=false refresh=true checked=$([ "$MODE_KEY" = "fast" ] && echo true || echo false) size=12"
 echo "-- 5/5/15 · office profile | size=9 color=#909090 disabled=true"
-echo "-- ${M_BAL} Balanced | bash=$DISPATCH param1=power_mode_balanced terminal=false refresh=true size=12"
+echo "-- Balanced | bash=$DISPATCH param1=power_mode_balanced terminal=false refresh=true checked=$([ "$MODE_KEY" = "balanced" ] && echo true || echo false) size=12"
 echo "-- 18/10/15 · daily use | size=9 color=#909090 disabled=true"
-echo "-- ${M_AWK} Always Awake | bash=$DISPATCH param1=power_mode_awake terminal=false refresh=true size=12"
+echo "-- Always Awake | bash=$DISPATCH param1=power_mode_awake terminal=false refresh=true checked=$([ "$MODE_KEY" = "awake" ] && echo true || echo false) size=12"
 echo "-- AC required · presentations | size=9 color=#909090 disabled=true"
-echo "-- ${M_DP} Deep Only | bash=$DISPATCH param1=power_mode_deep terminal=false refresh=true size=12"
+echo "-- Deep Only | bash=$DISPATCH param1=power_mode_deep terminal=false refresh=true checked=$([ "$MODE_KEY" = "deep" ] && echo true || echo false) size=12"
 echo "-- Immediate sleep · travel | size=9 color=#909090 disabled=true"
-echo "-- ${M_CUS} Set Custom Values… | bash=$DISPATCH param1=power_mode_custom terminal=false refresh=true size=12"
+echo "-- Set Custom Values… | bash=$DISPATCH param1=power_mode_custom terminal=false refresh=true checked=$([ "$MODE_KEY" = "custom" ] && echo true || echo false) size=12"
 echo "-- Configure manually | size=9 color=#909090 disabled=true"
 echo "-- Active: Bat ${SLEEP_VAL}/${DISPLAY_VAL}/${DISK_VAL}m · AC ${AC_SLEEP}m | size=10 color=#505050 disabled=true"
 echo "-- Usage: ${USE_WHEN} | size=10 color=#505050 disabled=true"
@@ -482,26 +479,22 @@ case "$SM_STATE" in
 esac
 
 SM_DEF_MARK=" "; SM_PRE_MARK=" "; SM_LT_MARK=" "; SM_TRV_MARK=" "
-SM_DEF_COLOR="color=#A8A8A8"
-SM_PRE_COLOR="color=#A8A8A8"
-SM_LT_COLOR="color=#A8A8A8"
-SM_TRV_COLOR="color=#A8A8A8"
 
 case "$SM_STATE" in
-    default)      SM_DEF_MARK="✓"; SM_DEF_COLOR="color=#34C759" ;;
-    presentation) SM_PRE_MARK="✓"; SM_PRE_COLOR="color=#34C759" ;;
-    download)     SM_LT_MARK="✓";  SM_LT_COLOR="color=#34C759" ;;
-    travel)       SM_TRV_MARK="✓"; SM_TRV_COLOR="color=#34C759" ;;
+    default)      : ;;
+    presentation) : ;;
+    download)     : ;;
+    travel)       : ;;
 esac
 
 echo "Sleep Mode — ${SM_TITLE} | size=14 color=#007AFF"
-echo "-- ${SM_DEF_MARK} Normal | bash=$DISPATCH param1=sleep_mode_default terminal=false refresh=true size=12 ${SM_DEF_COLOR}"
+echo "-- Normal | bash=$DISPATCH param1=sleep_mode_default terminal=false refresh=true checked=$([ "$SM_STATE" = "default" ] && echo true || echo false) size=12"
 echo "-- macOS handles sleep | size=9 color=#909090 disabled=true"
-echo "-- ${SM_PRE_MARK} Presentation | bash=$DISPATCH param1=sleep_mode_presentation terminal=false refresh=true size=12 ${SM_PRE_COLOR}"
+echo "-- Presentation | bash=$DISPATCH param1=sleep_mode_presentation terminal=false refresh=true checked=$([ "$SM_STATE" = "presentation" ] && echo true || echo false) size=12"
 echo "-- Never sleeps on AC | size=9 color=#909090 disabled=true"
-echo "-- ${SM_LT_MARK} Long Tasks | bash=$DISPATCH param1=sleep_mode_download terminal=false refresh=true size=12 ${SM_LT_COLOR}"
+echo "-- Long Tasks | bash=$DISPATCH param1=sleep_mode_download terminal=false refresh=true checked=$([ "$SM_STATE" = "download" ] && echo true || echo false) size=12"
 echo "-- Lid closed · AC required | size=9 color=#909090 disabled=true"
-echo "-- ${SM_TRV_MARK} Travel | bash=$DISPATCH param1=sleep_mode_travel terminal=false refresh=true size=12 ${SM_TRV_COLOR}"
+echo "-- Travel | bash=$DISPATCH param1=sleep_mode_travel terminal=false refresh=true checked=$([ "$SM_STATE" = "travel" ] && echo true || echo false) size=12"
 echo "-- Battery holds longer (4h) | size=9 color=#909090 disabled=true"
 echo "-- Prepare for Sleep | bash=$DISPATCH param1=arm_sleep terminal=false refresh=true size=12 color=#007AFF"
 echo "-- Close audio apps · arm sleep | size=9 color=#909090 disabled=true"
@@ -557,9 +550,9 @@ echo "-- Battery frozen at ${UPPER}% | size=9 color=#909090 disabled=true"
 
 # Sailing — separate sibling submenu
 echo "Sailing — $([ "$SAILING" = "true" ] && echo "ON (${LOWER}-${UPPER}%)" || echo "OFF") | size=13 color=#FFFFFF"
-echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 echo "-- Enable Sailing | bash=$DISPATCH param1=sail_on terminal=false refresh=true checked=$([ "$SAILING" = "true" ] && echo true || echo false) size=12"
 echo "-- Battery oscillates ${LOWER}-${UPPER}% | size=9 color=#909090 disabled=true"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 echo "-- Gap: 5% | bash=$DISPATCH param1=sail_gap_set param2=5 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "5" ] && echo true || echo false) size=12"
 echo "-- Gap: 10% | bash=$DISPATCH param1=sail_gap_set param2=10 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "10" ] && echo true || echo false) size=12"
 echo "-- Gap: 15% | bash=$DISPATCH param1=sail_gap_set param2=15 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "15" ] && echo true || echo false) size=12"
