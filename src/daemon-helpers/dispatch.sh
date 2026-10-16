@@ -523,9 +523,7 @@ case "$1" in
         rm -f "$HOME/.battopt-swiftbar/.sleep_override_batt"
         sudo -n /usr/bin/pmset -a disablesleep 0
         # Battery defaults
-        sudo -n /usr/bin/pmset -b standbydelaylow 900
-        sudo -n /usr/bin/pmset -b standbydelayhigh 900
-        sudo -n /usr/bin/pmset -b autopoweroffdelay 900
+        ~/.battopt-swiftbar/power_saver.sh enforce-sleep-policy
         # AC defaults — restore normal sleep timing
         sudo -n /usr/bin/pmset -c sleep 120
         sudo -n /usr/bin/pmset -c displaysleep 20
