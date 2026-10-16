@@ -359,6 +359,310 @@ clear_cache() {
     rm -f "$HOME/.battopt-swiftbar/.status_cache"
 }
 
+# === INTENT APPLY (v1.6.2) — atomic battery mutations ===
+
+_kill_transients() {
+    sudo pkill -9 -f "battopt charge"    2>/dev/null || true
+    sudo pkill -9 -f "battopt discharge" 2>/dev/null || true
+    sudo pkill -9 -f "battopt calibrate" 2>/dev/null || true
+    sudo pkill -9 -f "sd_watcher.sh"     2>/dev/null || true
+    sudo pkill -9 -f "charge_full"       2>/dev/null || true
+    sudo -n "$BAT" charge stop    >/dev/null 2>&1 || true
+    sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
+    sudo -n "$BAT" calibrate stop >/dev/null 2>&1 || true
+}
+
+_clear_session_locked() {
+    guard_token_clear_locked || return 1
+    rm -f "$HOME/.battopt-swiftbar/.sd_session"
+    rm -f "$HOME/.battopt-swiftbar/.hold_override"
+    rm -f "$HOME/.battopt-swiftbar/.hold_token"
+    rm -f "$HOME/.battopt-swiftbar/.pre_hold_config"
+}
+
+_verify_smc_upper() {
+    sudo -n "$BAT" status 2>/dev/null \
+        | grep -oE 'upper limit [0-9]+' \
+        | grep -oE '[0-9]+' \
+        | head -1
+}
+
+intent_apply() {
+    local kind="$1"; shift
+    local U L T CUR V MODE GAP TOKEN
+    local D="$HOME/.battopt-swiftbar"
+
+    guard_lock || { log "intent_apply: lock failed ($kind)"; return 1; }
+
+    _kill_transients
+    sleep 1
+    _clear_session_locked || {
+        log "intent_apply: clear session failed ($kind)"
+        guard_unlock
+        return 1
+    }
+
+    case "$kind" in
+        limit)
+            U="$1"; L="$2"
+            CUR=$(get_pct)
+            SAILING=true
+            SAIL_GAP=$((U - L))
+            [ "$SAIL_GAP" -lt 1 ] && SAIL_GAP=1
+            LAST_UPPER="$U"
+            LAST_LOWER="$L"
+            save_cfg
+            # Discharge path if battery above target
+            if [ -n "$CUR" ] && [ "$CUR" -gt "$U" ]; then
+                echo "discharge" > "$D/.active_mode"
+                TOKEN=$(guard_token_write_locked discharge) || { guard_unlock; return 1; }
+                printf '%s\n' "$TOKEN" > "$D/.sd_session"
+                nohup "$D/sd_watcher.sh" "$TOKEN" "$U" "$L" "$D/.sd_session" "$LOG" "$BAT" >/dev/null 2>&1 &
+                disown
+                nohup sudo -n "$BAT" discharge "$U" >/dev/null 2>&1 &
+                disown
+                guard_unlock
+                notify "BattOpt" "Discharging ${CUR}% → ${U}%"
+                return 0
+            fi
+            # Hold/charge path
+            echo "hold" > "$D/.active_mode"
+            guard_token_write_locked hold >/dev/null || { guard_unlock; return 1; }
+            run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
+            V=$(_verify_smc_upper)
+            if [ "$V" != "$U" ]; then
+                log "intent_apply: limit retry (SMC=$V want=$U)"
+                sleep 2
+                run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
+                V=$(_verify_smc_upper)
+            fi
+            guard_token_clear_locked
+            echo "idle" > "$D/.active_mode"
+            guard_unlock
+            if [ "$V" = "$U" ]; then
+                notify "BattOpt" "Limit set ${V}% / ${L}%"
+                return 0
+            fi
+            log "intent_apply: limit failed (SMC=$V want=$U)"
+            notify "BattOpt" "Limit failed (SMC=$V)"
+            return 1
+            ;;
+
+        hold_current)
+            CUR=$(get_pct)
+            [ -n "$CUR" ] || {
+                guard_unlock
+                notify "BattOpt" "Hold failed (no battery reading)"
+                return 1
+            }
+            U="$CUR"
+            L=$((CUR - 1))
+            [ "$L" -lt 20 ] && L=20
+            [ "$L" -ge "$U" ] && L=$((U - 1))
+            echo "hold" > "$D/.active_mode"
+            guard_token_write_locked hold >/dev/null || { guard_unlock; return 1; }
+            run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
+            V=$(_verify_smc_upper)
+            if [ "$V" != "$U" ]; then
+                sleep 2
+                run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
+                V=$(_verify_smc_upper)
+            fi
+            guard_token_clear_locked
+            echo "idle" > "$D/.active_mode"
+            guard_unlock
+            if [ "$V" = "$U" ]; then
+                notify "BattOpt" "Holding at ${V}%"
+                return 0
+            fi
+            log "intent_apply: hold_current failed (SMC=$V want=$U)"
+            notify "BattOpt" "Hold failed (SMC=$V)"
+            return 1
+            ;;
+
+        sail_on|sail_off|sail_gap)
+            case "$kind" in
+                sail_on)
+                    SAILING=true
+                    [ "$LAST_LOWER" -ge "$LAST_UPPER" ] && LAST_LOWER=$((LAST_UPPER - 5))
+                    [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
+                    ;;
+                sail_off)
+                    SAILING=false
+                    ;;
+                sail_gap)
+                    GAP="$1"
+                    SAIL_GAP="$GAP"
+                    if [ "$SAILING" = "true" ]; then
+                        LAST_LOWER=$((LAST_UPPER - GAP))
+                        [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
+                    fi
+                    ;;
+            esac
+            save_cfg
+            echo "hold" > "$D/.active_mode"
+            guard_token_write_locked hold >/dev/null || { guard_unlock; return 1; }
+            run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
+            V=$(_verify_smc_upper)
+            if [ "$V" != "$LAST_UPPER" ]; then
+                sleep 2
+                run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
+                V=$(_verify_smc_upper)
+            fi
+            guard_token_clear_locked
+            echo "idle" > "$D/.active_mode"
+            guard_unlock
+            if [ "$V" = "$LAST_UPPER" ]; then
+                notify "BattOpt" "$kind applied (SMC=$V)"
+                return 0
+            fi
+            log "intent_apply: $kind failed (SMC=$V want=$LAST_UPPER)"
+            notify "BattOpt" "$kind failed (SMC=$V)"
+            return 1
+            ;;
+
+        disable_limit)
+            U=100; L=99
+            run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
+            V=$(_verify_smc_upper)
+            if [ "$V" != "$U" ]; then
+                sleep 2
+                run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
+                V=$(_verify_smc_upper)
+            fi
+            if [ "$V" = "$U" ]; then
+                LAST_UPPER=100
+                LAST_LOWER=99
+                SAILING=false
+                SAIL_GAP=1
+                save_cfg
+            fi
+            guard_token_clear_locked
+            echo "idle" > "$D/.active_mode"
+            guard_unlock
+            if [ "$V" = "$U" ]; then
+                notify "BattOpt" "Limits disabled (SMC=$V)"
+                return 0
+            fi
+            log "intent_apply: disable_limit failed (SMC=$V)"
+            notify "BattOpt" "Disable failed (SMC=$V)"
+            return 1
+            ;;
+
+        charge_full)
+            echo "charge_full" > "$D/.active_mode"
+            TOKEN=$(guard_token_write_locked charge_full) || {
+                echo "idle" > "$D/.active_mode"
+                guard_unlock
+                return 1
+            }
+            run_with_retry limit 100 99 >> "$LOG" 2>&1
+            V=$(_verify_smc_upper)
+            if [ "$V" != 100 ]; then
+                sleep 2
+                run_with_retry limit 100 99 >> "$LOG" 2>&1
+                V=$(_verify_smc_upper)
+            fi
+            if [ "$V" != 100 ]; then
+                guard_token_clear_locked
+                echo "idle" > "$D/.active_mode"
+                guard_unlock
+                notify "BattOpt" "Charge Full failed (SMC=$V)"
+                return 1
+            fi
+            nohup sudo -n "$BAT" charge 100 >/dev/null 2>&1 &
+            disown
+            nohup bash -c '
+                B="$1"; D="$2"; L="$3"; T="$4"
+                source "$D/state_guard.sh" 2>/dev/null
+                P=0
+                for i in $(seq 1 720); do
+                    sleep 10
+                    P=$(sudo -n "$B" status 2>/dev/null | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+" | head -1)
+                    [ -n "$P" ] && [ "$P" -ge 99 ] && break
+                done
+                if [ -n "$P" ] && [ "$P" -ge 99 ] && guard_token_matches "$T" 2>/dev/null; then
+                    sudo -n "$B" charge stop >/dev/null 2>&1
+                    sudo -n "$B" limit 99 98 >/dev/null 2>&1
+                    printf "LAST_UPPER=99\nLAST_LOWER=98\nSAILING=false\nSAIL_GAP=1\n" > "$D/config.tmp.$$" && mv "$D/config.tmp.$$" "$D/config"
+                else
+                    sudo -n "$B" charge stop >/dev/null 2>&1
+                fi
+                guard_session_end "$T" 2>/dev/null
+                echo "[$(date +%H:%M:%S)] charge_full: watcher finished" >> "$L"
+            ' _ "$BAT" "$D" "$LOG" "$TOKEN" >/dev/null 2>&1 &
+            disown
+            guard_unlock
+            notify "BattOpt" "Charging to 100%"
+            return 0
+            ;;
+
+        smart_discharge)
+            T="$1"; L="$2"; MODE="$3"; GAP="$4"
+            CUR=$(get_pct)
+            if [ -z "$CUR" ] || [ "$CUR" -le "$T" ]; then
+                guard_unlock
+                notify "BattOpt" "Discharge not started (CUR=$CUR, T=$T)"
+                return 1
+            fi
+            LAST_UPPER="$T"
+            LAST_LOWER="$L"
+            SAILING=false
+            SAIL_GAP=0
+            if [ "$MODE" = "Sail" ]; then
+                SAILING=true
+                SAIL_GAP="$GAP"
+            fi
+            save_cfg
+            echo "discharge" > "$D/.active_mode"
+            TOKEN=$(guard_token_write_locked discharge) || {
+                echo "idle" > "$D/.active_mode"
+                guard_unlock
+                return 1
+            }
+            printf '%s\n' "$TOKEN" > "$D/.sd_session"
+            nohup "$D/sd_watcher.sh" "$TOKEN" "$T" "$L" "$D/.sd_session" "$LOG" "$BAT" >/dev/null 2>&1 &
+            disown
+            nohup sudo -n "$BAT" discharge "$T" >/dev/null 2>&1 &
+            disown
+            guard_unlock
+            notify "BattOpt" "Discharging ${CUR}% to ${T}%"
+            return 0
+            ;;
+
+        calibration_start)
+            echo "calibration" > "$D/.active_mode"
+            TOKEN=$(guard_token_write_locked calibration) || {
+                echo "idle" > "$D/.active_mode"
+                guard_unlock
+                return 1
+            }
+            nohup sudo -n "$BAT" calibrate >/dev/null 2>&1 &
+            disown
+            guard_unlock
+            notify "BattOpt" "Calibration started"
+            return 0
+            ;;
+
+        calibration_stop)
+            kill_calibrate
+            guard_token_clear_locked
+            echo "idle" > "$D/.active_mode"
+            guard_unlock
+            notify "BattOpt" "Calibration stopped"
+            return 0
+            ;;
+
+        *)
+            log "intent_apply: unknown kind ($kind)"
+            guard_unlock
+            return 1
+            ;;
+    esac
+}
+
+# === END INTENT APPLY ===
+
 case "$1" in
     force_reset) "$FORCE" ;;
     
@@ -578,105 +882,32 @@ CFGEOF
 
     stop_now)
         acquire; ensure_clean
-        hold_at_current
-        release ;;
+        release
+        intent_apply hold_current ;;
 
     remove_limit_hold)
         acquire; ensure_clean
-        hold_at_current
-        release ;;
+        release
+        intent_apply hold_current ;;
 
     disable_limit)
         acquire; ensure_clean
         log "disable all"
-        run_with_retry limit disable >> "$LOG" 2>&1
-        LAST_UPPER=100
-        LAST_LOWER=99
-        SAILING=false
-        SAIL_GAP=1
-        save_cfg
-        rm -f "$HOME/.battopt-swiftbar/.sd_session"
-        [ -n "$(guard_token 2>/dev/null)" ] && guard_session_end "$(guard_token)" 2>/dev/null
-        echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
-        release ;;
+        release
+        intent_apply disable_limit ;;
 
     charge_full)
         acquire; ensure_clean
-        # Clear legacy discharge session so its watcher can't corrupt state
-        sd_session_invalidate 2>/dev/null || true
-        sudo -n pkill -9 -f "sd_watcher" 2>/dev/null || true
-        rm -f "$HOME/.battopt-swiftbar/.sd_session"
-        # A guard token must be created and retained before the watcher can
-        # verify ownership. The current block writes charge_full without one.
         log "charge_full: START"
-
-        # Layer 18: mark active mode + create guard token
-        TOKEN=$(guard_session_begin charge_full)
-        [ -n "$TOKEN" ] || { log "charge_full: token fail"; release; exit 1; }
-
-        # Release all limits — must use 100/99 to clear SMC hold
-        # (limit disable alone doesn't release NCR=14)
-        run_with_retry limit 100 99 >/dev/null 2>&1
-        sleep 2
-
-        # Start charging
-        nohup sudo -n "$BAT" charge 100 >/dev/null 2>&1 &
         release
-
-        # Background watcher: after 99%, sync config + active_mode
-        nohup bash -c '
-            B="'"$BAT"'"
-            L="'"$LOG"'"
-            D="'"$HOME"'/.battopt-swiftbar"
-            T="'"$TOKEN"'"
-            source "$D/state_guard.sh" 2>/dev/null
-            COMPLETED=0
-            for i in $(seq 1 720); do
-                sleep 10
-                P=$(sudo -n "$B" status 2>/dev/null | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+")
-                if [ -n "$P" ] && [ "$P" -ge 99 ]; then
-                    guard_token_matches "$T" 2>/dev/null || [ "$(cat "$D/.active_mode" 2>/dev/null)" = "charge_full" ] || exit 0
-                    [ "$(cat "$D/.active_mode" 2>/dev/null)" = "charge_full" ] || exit 0
-                    # Lock SMC at 99/98
-                    sudo -n "$B" limit 99 98 >/dev/null 2>&1
-                    # Layer 18: sync config to match — prevents guardian drift
-                    cat > "$D/config" <<CFG
-LAST_UPPER=99
-LAST_LOWER=98
-SAILING=false
-SAIL_GAP=1
-CFG
-                    sudo -n "$B" charge stop >/dev/null 2>&1
-                    guard_session_end "$T" 2>/dev/null
-                    echo "[$(date +%H:%M:%S)] charge_full: reached 99%, config synced to 99/98" >> "$L"
-                    COMPLETED=1
-                    break
-                fi
-            done
-            if [ "$COMPLETED" -eq 0 ]; then
-                echo "[$(date +%H:%M:%S)] charge_full: timeout — stopping charge and ending session" >> "$L"
-                sudo -n "$B" charge stop >/dev/null 2>&1
-                guard_session_end "$T" 2>/dev/null
-            fi
-        ' >/dev/null 2>&1 &
-        ;;
+        intent_apply charge_full ;;
 
 
 
     smart_discharge)
         acquire; ensure_clean
-        # === SAFETY: kill previous discharge + reset limit ===
-        sudo pkill -9 -f "battopt discharge" 2>/dev/null
-        sudo -n "$BAT" discharge stop >/dev/null 2>&1
-        sleep 1
-        # If old limit was temp (from previous hold_at_current), restore from config
-        source "$HOME/.battopt-swiftbar/config" 2>/dev/null
-        sudo -n "$BAT" limit "${LAST_UPPER:-85}" "${LAST_LOWER:-80}" >/dev/null 2>&1
-        # === END SAFETY ===
-        
         CUR=$(get_pct); [ -z "$CUR" ] && { release; exit 1; }
 
-        # Smart default: if last target >= current, use CUR-5
         LAST_TARGET=$(get_last_input SD_TARGET 75)
         if [ "$LAST_TARGET" -ge "$CUR" ]; then
             DEFAULT_TARGET=$((CUR - 5))
@@ -684,7 +915,7 @@ CFG
         else
             DEFAULT_TARGET="$LAST_TARGET"
         fi
-        
+
         T=$(osascript <<AS
 try
     set d to display dialog "Smart Discharge - Target
@@ -708,11 +939,6 @@ AS
             exit 0
         fi
         save_last_input SD_TARGET "$T"
-        if [ "$T" -lt 20 ] || [ "$T" -gt 90 ]; then
-            notify "BattOpt" "Invalid target: ${T}% (must be 20-90)"
-            release
-            exit 0
-        fi
         if [ "$T" -ge "$CUR" ]; then
             notify "BattOpt" "Target ${T}% must be < current ${CUR}%"
             release
@@ -737,13 +963,12 @@ AS
         save_last_input SD_MODE "$MODE"
 
         if [ "$MODE" = "Sail" ]; then
-            # Determine default item based on last SD_SAIL_GAP
             LAST_GAP=$(get_last_input SD_SAIL_GAP 10)
             case "$LAST_GAP" in
                 5|10|15|30) DEFAULT_GAP="$LAST_GAP" ;;
                 *)          DEFAULT_GAP="Custom" ;;
             esac
-            
+
             G=$(osascript <<AS
 try
     set opts to {"5", "10", "15", "30", "Custom"}
@@ -781,70 +1006,20 @@ AS
             fi
             { [ "$G" -lt 5 ] || [ "$G" -gt 30 ]; } && G=10
             LOW=$((T - G)); [ $LOW -lt 20 ] && LOW=20
-            SAILING=true
         else
             LOW=$((T - 1)); [ $LOW -lt 20 ] && LOW=20
-            SAILING=false
+            G=0
         fi
 
-        LAST_UPPER=$T; LAST_LOWER=$LOW
-        SAIL_GAP=$([ "$MODE" = "Sail" ] && echo $((T - LOW)) || echo 0)
-        save_cfg
-        echo "$T" > "$HOME/.battopt-swiftbar/.sd_watch"
-        # Stop charging cleanly without invoking hold_at_current
-        sd_session_invalidate 2>/dev/null || true
-        sudo -n "$BAT" discharge stop >/dev/null 2>&1
-        sudo -n "$BAT" charge stop >/dev/null 2>&1
-        sudo -n pkill -9 -f "battopt charge " 2>/dev/null || true
-        sleep 1
-        # Mark active mode as discharge.
-        echo "discharge" > "$HOME/.battopt-swiftbar/.active_mode"
-        rm -f "$HOME/.battopt-swiftbar/.hold_override" "$HOME/.battopt-swiftbar/.hold_token" "$HOME/.battopt-swiftbar/.pre_hold_config"
-        soft_stop
-        # Layer 18e: create a guarded session so guardian sees it as legitimate.
-        rm -f "$HOME/.battopt-swiftbar/.active_token"
-        SD_ID=$(guard_session_begin discharge)
-        [ -n "$SD_ID" ] || { release; exit 1; }
-        echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"
-        log "smart_discharge: target=$T mode=$MODE low=$LOW active_mode=discharge session=$SD_ID"
-        # Launch persistent watcher
-        nohup "$HOME/.battopt-swiftbar/sd_watcher.sh" \
-            "$SD_ID" "$T" "$LOW" "$HOME/.battopt-swiftbar/.sd_session" "$LOG" "$BAT" \
-            >/dev/null 2>&1 &
-        disown
-        # Launch discharge
-        nohup sudo -n "$BAT" discharge "$T" >/dev/null 2>&1 &
-        disown
-        sleep 3
-        pgrep -f "battopt discharge" >/dev/null || \
-            sudo -n "$BAT" limit "$T" "$LOW" >> "$LOG" 2>&1
-        release ;;
+        release
+        intent_apply smart_discharge "$T" "$LOW" "$MODE" "$G" ;;
 
     limit_custom)
         acquire; ensure_clean
-
-        # FIX: Kill ALL active ops (charge_full blocks discharge)
-        log "limit_custom: killing active ops"
-        sudo pkill -9 -f "battopt charge" 2>/dev/null || true
-        sudo pkill -9 -f "battopt discharge" 2>/dev/null || true
-        sudo pkill -9 -f "battopt calibrate" 2>/dev/null || true
-        sudo pkill -9 -f "sd_watcher.sh" 2>/dev/null || true
-        sudo pkill -9 -f "charge_full" 2>/dev/null || true
-        sudo -n "$BAT" charge stop >/dev/null 2>&1 || true
-        sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
-        sudo -n "$BAT" calibrate stop >/dev/null 2>&1 || true
-        sd_session_invalidate 2>/dev/null || true
-        rm -f "$HOME/.battopt-swiftbar/.active_token"
-        echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
-        sleep 2
-        
         CUR=$(get_pct)
-
-        # Default: prefer last user-entered custom limit
         DEF=$(get_last_input LIMIT_CUSTOM "")
         [ -z "$DEF" ] && DEF="${LAST_UPPER}/${LAST_LOWER}"
-        log "limit_custom: default $DEF"
-        
+
         R=$(osascript <<AS
 try
     set d to display dialog "Charge Limit
@@ -869,84 +1044,19 @@ AS
         validate_int "$U" 50 100 || { notify "BattOpt" "Upper must be 50-100"; release; exit 0; }
         validate_int "$L" 20 99 || { notify "BattOpt" "Lower must be 20-99"; release; exit 0; }
         [ "$L" -ge "$U" ] && { notify "BattOpt" "Lower must be below upper"; release; exit 0; }
-        
-        LAST_UPPER=$U; LAST_LOWER=$L
-        SAIL_GAP=$((U - L))
-        [ "$L" -lt "$U" ] && SAILING=true
-        save_cfg
         save_last_input LIMIT_CUSTOM "$U/$L"
-        # LAYER 16: clear hold flags
-        rm -f "$HOME/.battopt-swiftbar/.hold_override"
-        rm -f "$HOME/.battopt-swiftbar/.hold_token"
-        rm -f "$HOME/.battopt-swiftbar/.pre_hold_config"
-        log "limit_custom: cleared hold flags + pre-hold config"
-        
-        if [ "$CUR" -gt "$U" ]; then
-            # Discharge path
-            rm -f "$HOME/.battopt-swiftbar/.active_token"
-            SD_ID=$(guard_session_begin discharge)
-            [ -n "$SD_ID" ] || SD_ID=$(sd_session_new)
-            echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"
-            log "limit_custom: START discharge $CUR%→$U% (session $SD_ID)"
-            notify "BattOpt" "Discharging ${CUR}% → ${U}%"
-            
-            # Start watcher in background
-            nohup "$HOME/.battopt-swiftbar/sd_watcher.sh" \
-                "$SD_ID" "$U" "$L" "$HOME/.battopt-swiftbar/.sd_session" "$LOG" "$BAT" \
-                >/dev/null 2>&1 &
-            disown
-            
-            # Mark active mode as discharge
-            echo "discharge" > "$HOME/.battopt-swiftbar/.active_mode"
-            # Start discharge
-            nohup sudo -n "$BAT" discharge "$U" >/dev/null 2>&1 &
-            disown
-            
-            sleep 3
-            if pgrep -f "battopt discharge" >/dev/null; then
-                log "limit_custom: discharge ACTIVE (active_mode=discharge)"
-                notify "BattOpt" "Discharge active → ${U}%"
-            else
-                log "limit_custom: discharge FAILED — fallback to limit"
-                rm -f "$HOME/.battopt-swiftbar/.sd_session"
-                rm -f "$HOME/.battopt-swiftbar/.active_token"
-                echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
-                sudo -n "$BAT" limit "$U" "$L" >/dev/null 2>&1
-            fi
-        else
-            # Charge/Hold path
-            sd_session_invalidate
-            HTOK=$(guard_session_begin hold)
-            [ -n "$HTOK" ] || { release; exit 1; }
-            apply_intent
-            guard_session_end "$HTOK" 2>/dev/null || true
-            V=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
-            if [ "$V" = "$U" ]; then
-                log "limit_custom: applied $U/$L (PCT=$CUR, SMC=$V)"
-                notify "BattOpt" "Limit set ${U}% / ${L}%"
-            else
-                log "limit_custom: FAILED $U/$L (SMC=$V)"
-                notify "BattOpt" "Limit failed (SMC=$V)"
-            fi
-        fi
-        
-        release ;;
+        release
+        intent_apply limit "$U" "$L" ;;
 
     sail_on)
-        acquire
-        SAILING=true
-        [ "$LAST_LOWER" -ge "$LAST_UPPER" ] && LAST_LOWER=$((LAST_UPPER - 5))
-        [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
-        save_cfg
-        ensure_clean; apply_intent
-        release ;;
+        acquire; ensure_clean
+        release
+        intent_apply sail_on ;;
 
     sail_off)
-        acquire
-        SAILING=false
-        save_cfg
-        ensure_clean; apply_intent
-        release ;;
+        acquire; ensure_clean
+        release
+        intent_apply sail_off ;;
 
     sail_gap_set)
         G="$2"
@@ -961,26 +1071,19 @@ end try
 AS
 )
         [ "$G" = "__CANCELLED__" ] && { release; exit 0; }
-            save_last_input GAP_CUSTOM "$G"
+        save_last_input GAP_CUSTOM "$G"
         [ -z "$G" ] && { release; exit 0; }
         validate_int "$G" 5 30 || { notify "BattOpt" "Invalid gap (5-30)"; release; exit 0; }
-        SAIL_GAP=$G
-        if [ "$SAILING" = "true" ]; then
-            LAST_LOWER=$((LAST_UPPER - G)); [ $LAST_LOWER -lt 20 ] && LAST_LOWER=20
-            save_cfg
-            ensure_clean; apply_intent
-        else
-            save_cfg
-        fi
-        release ;;
+        release
+        intent_apply sail_gap "$G" ;;
 
     calibrate)
         acquire; ensure_clean
         log "calibrate"
-        nohup sudo -n "$BAT" calibrate >/dev/null 2>&1 &
-        release ;;
+        release
+        intent_apply calibration_start ;;
 
-    cal_stop) acquire; log "cal_stop"; kill_calibrate; release ;;
+    cal_stop) acquire; log "cal_stop"; release; intent_apply calibration_stop ;;
 
     sched_on)  log "sched_on";  sudo -n "$BAT" schedule enable  >> "$LOG" 2>&1 ;;
     sched_off) log "sched_off"; sudo -n "$BAT" schedule disable >> "$LOG" 2>&1 ;;
