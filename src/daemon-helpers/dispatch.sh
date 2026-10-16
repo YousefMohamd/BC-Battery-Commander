@@ -24,22 +24,11 @@ get_pct() { raw | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+"; }
 # === SMART DISCHARGE SESSION ===
 SD_SESSION_FILE="$HOME/.battopt-swiftbar/.sd_session"
 
-sd_session_new() {
-    local ID="$(date +%s)_$$"
-    echo "$ID" > "$SD_SESSION_FILE"
-    echo "$ID"
-}
-
-sd_session_current() {
-    cat "$SD_SESSION_FILE" 2>/dev/null || echo "none"
-}
-
 sd_session_invalidate() {
     rm -f "$SD_SESSION_FILE"
 }
 
 is_charging() { ioreg -rn AppleSmartBattery 2>/dev/null | grep -q '"IsCharging" = Yes'; }
-
 
 
 # === INPUT PERSISTENCE ===
@@ -84,7 +73,6 @@ save_last_input() {
     echo "${key}=${val}" >> "$tmp"
     mv "$tmp" "$LAST_INPUTS" 2>/dev/null || true
 }
-
 
 
 save_cfg() {
@@ -209,144 +197,6 @@ notify() {
         fi
         disown
     fi
-}
-
-apply_intent() {
-    local PCT=$(get_pct)
-    
-    if [ "$SAILING" = "true" ] && [ "$LAST_LOWER" -lt "$LAST_UPPER" ]; then
-        # Check if battery is above upper
-        if [ -n "$PCT" ] && [ "$PCT" -gt "$LAST_UPPER" ]; then
-            # Battery above upper — trigger discharge to upper
-            local SD_ID=$(sd_session_new)
-            echo "$SD_ID" > "$HOME/.battopt-swiftbar/.sd_session"
-            log "apply: DISCHARGE above upper ($PCT% > $LAST_UPPER%) session=$SD_ID"
-            
-            # Kill old discharge
-            sudo pkill -9 -f "battopt discharge" 2>/dev/null
-            sudo -n "$BAT" discharge stop >/dev/null 2>&1
-            sleep 1
-            
-            # Start watcher (background)
-            nohup "$HOME/.battopt-swiftbar/sd_watcher.sh" \
-                "$SD_ID" "$LAST_UPPER" "$LAST_LOWER" "$HOME/.battopt-swiftbar/.sd_session" "$LOG" "$BAT" \
-                >/dev/null 2>&1 &
-            disown
-            
-            # Start discharge
-            nohup sudo -n "$BAT" discharge "$LAST_UPPER" >/dev/null 2>&1 &
-            disown
-            
-            sleep 2
-            if pgrep -f "battopt discharge" >/dev/null; then
-                log "apply: discharge ACTIVE ($PCT% → $LAST_UPPER%)"
-            else
-                # Fallback: just set limit
-                run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
-            fi
-        else
-            # Normal: battery below upper
-            log "apply: sailing $LAST_UPPER/$LAST_LOWER (PCT=$PCT)"
-            run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
-        fi
-    else
-        # Static hold
-        local L=$((LAST_UPPER - 1))
-        [ $L -lt 20 ] && L=20
-        log "apply: hold $LAST_UPPER/$L (PCT=$PCT)"
-        run_with_retry limit "$LAST_UPPER" "$L" >> "$LOG" 2>&1
-    fi
-}
-
-hold_at_current() {
-    local CUR=$(get_pct); [ -z "$CUR" ] && return 1
-    local LOW=$((CUR - 1)); [ $LOW -lt 20 ] && LOW=20
-
-    # ─── Layer 16b: unique token for this hold session ───
-    local TOKEN="hold_$$_$(date +%s)_${RANDOM}"
-    echo "$TOKEN" > "$HOME/.battopt-swiftbar/.hold_token"
-
-    # Stop any discharge
-    sd_session_invalidate 2>/dev/null || true
-    sudo pkill -9 -f "battopt discharge" 2>/dev/null
-    sudo -n "$BAT" discharge stop >/dev/null 2>&1
-
-    # Save PRE-HOLD config so Custom dialog can default to it
-    if [ ! -f "$HOME/.battopt-swiftbar/.hold_override" ]; then
-        cp "$HOME/.battopt-swiftbar/config" "$HOME/.battopt-swiftbar/.pre_hold_config" 2>/dev/null
-        echo "[$(date +%H:%M:%S)] saved pre-hold config (fresh hold)" >> "$LOG"
-    fi
-
-    # Persist hold target
-    LAST_UPPER=$CUR
-    LAST_LOWER=$LOW
-    SAILING=false
-    save_cfg
-    log "hold: config persisted LAST_UPPER=$CUR LAST_LOWER=$LOW SAILING=false (token=$TOKEN)"
-    echo "hold" > "$HOME/.battopt-swiftbar/.active_mode"
-    touch "$HOME/.battopt-swiftbar/.hold_override"
-
-    # FAST PATH: if not charging, apply and return
-    if ! is_charging; then
-        run_with_retry limit "$CUR" "$LOW" >> "$LOG" 2>&1
-        log "held (was idle)"
-        return 0
-    fi
-
-    # Apply limit IMMEDIATELY
-    run_with_retry limit "$CUR" "$LOW" >> "$LOG" 2>&1
-    log "limit applied at ${CUR}% — SMC wait in background"
-
-    # Background watcher — with abort checks
-    (
-        sleep 2
-
-        for i in $(seq 1 60); do
-            # Abort #1: token replaced (newer hold or custom limit)
-            CURRENT_TOKEN=$(cat "$HOME/.battopt-swiftbar/.hold_token" 2>/dev/null)
-            if [ "$CURRENT_TOKEN" != "$TOKEN" ]; then
-                echo "[$(date +%H:%M:%S)] watcher[$TOKEN]: aborted (token replaced)" >> "$LOG"
-                exit 0
-            fi
-
-            # Abort #2: hold_override cleared
-            if [ ! -f "$HOME/.battopt-swiftbar/.hold_override" ]; then
-                echo "[$(date +%H:%M:%S)] watcher[$TOKEN]: aborted (hold_override gone)" >> "$LOG"
-                exit 0
-            fi
-
-            # Success: charging stopped
-            if ! is_charging; then
-                echo "[$(date +%H:%M:%S)] held ${i}s" >> "$LOG"
-                exit 0
-            fi
-
-            sleep 1
-        done
-
-        # Timeout reached — re-verify before force
-        CURRENT_TOKEN=$(cat "$HOME/.battopt-swiftbar/.hold_token" 2>/dev/null)
-        if [ "$CURRENT_TOKEN" != "$TOKEN" ]; then
-            echo "[$(date +%H:%M:%S)] watcher[$TOKEN]: timeout aborted (token changed)" >> "$LOG"
-            exit 0
-        fi
-        if [ ! -f "$HOME/.battopt-swiftbar/.hold_override" ]; then
-            echo "[$(date +%H:%M:%S)] watcher[$TOKEN]: timeout aborted (hold_override gone)" >> "$LOG"
-            exit 0
-        fi
-
-        # Confirm the SMC actually has our limit
-        CUR_LIMIT=$(sudo -n "$BAT" status 2>/dev/null | grep -oE "upper limit [0-9]+" | grep -oE "[0-9]+")
-        if [ "$CUR_LIMIT" = "$CUR" ]; then
-            echo "[$(date +%H:%M:%S)] SMC slow but limit applied (60s)" >> "$LOG"
-        else
-            echo "[$(date +%H:%M:%S)] 60s timeout + limit FAILED → force" >> "$LOG"
-            "$FORCE" > /dev/null 2>&1
-        fi
-    ) &
-    disown
-
-    return 0
 }
 
 kill_charge()    { log "kill_charge";    sudo pkill -9 -f "battopt charge " 2>/dev/null; sleep 0.5; }
@@ -804,10 +654,6 @@ AS
         ;;
     
 
-
-    
-    
-    
     reapply_limit)
         # Manually reapply the saved limit (called after daemon restart)
         source "$HOME/.battopt-swiftbar/config"
@@ -901,7 +747,6 @@ CFGEOF
         log "charge_full: START"
         release
         intent_apply charge_full ;;
-
 
 
     smart_discharge)
@@ -1748,8 +1593,6 @@ AS
         notify "BattOpt" "Process monitor done"
         release
         ;;
-
-
 
 
     power_mode_custom)
