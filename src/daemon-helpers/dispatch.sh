@@ -209,6 +209,13 @@ clear_cache() {
     rm -f "$HOME/.battopt-swiftbar/.status_cache"
 }
 
+# === SWIFTBAR REFRESH HOOK ===
+# Trigger SwiftBar to re-run the plugin immediately after any dispatch action.
+# Falls back silently if SwiftBar isn't running or URL scheme unsupported.
+refresh_swiftbar() {
+    /usr/bin/open -g "swiftbar://refreshplugin?name=battopt.10s" >/dev/null 2>&1 || true
+}
+
 # === INTENT APPLY (v1.6.2) — atomic battery mutations ===
 
 _kill_transients() {
@@ -512,6 +519,9 @@ intent_apply() {
 }
 
 # === END INTENT APPLY ===
+
+# Fire refresh on exit (normal + error paths)
+trap refresh_swiftbar EXIT
 
 case "$1" in
     force_reset) "$FORCE" ;;

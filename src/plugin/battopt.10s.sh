@@ -21,6 +21,7 @@ mkdir -p "$NOTIFY_DIR"
 
 LAST_UPPER=80; LAST_LOWER=75; SAILING=true; SAIL_GAP=10
 [ -f "$MYCFG" ] && source "$MYCFG"
+# ACTIVE_MODE already read at top
 
 # === STATUS CACHE (20s TTL) ===
 NOW_TS=$(date +%s)
@@ -234,9 +235,9 @@ ICON_MAXCAP=$(echo "$IOREG_DATA" | grep -oE '"MaxCapacity" = [0-9]+' | awk '{pri
 
 # === Icon priority (Layer 18c — active_mode aware) ===
 # Read active_mode directly (before it's read at line ~424)
-ICON_ACTIVE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null || echo "idle")
+ICON_ACTIVE="$ACTIVE_MODE"
 
-PROC_D_NOW=$(pgrep -f "battopt discharge" 2>/dev/null | wc -l | tr -d ' ')
+PROC_D_NOW=$(sudo -n pgrep -f "battopt discharge" 2>/dev/null | wc -l | tr -d ' ')
 PROC_CH_NOW=$(pgrep -f "battopt charge " 2>/dev/null | wc -l | tr -d ' ')
 PROC_CAL_NOW=$(pgrep -f "battopt calibrate" 2>/dev/null | wc -l | tr -d ' ')
 
@@ -297,7 +298,7 @@ fi
 STATE=$(echo "$SNAP" | grep -oE ', (charging|discharging|no charging)' | head -1 | sed 's/^, //')
 
 # === HOLD REACHED NOTIFICATION (Layer 18d — precise) ===
-PROC_D_NOTIF=$(pgrep -f "battopt discharge" 2>/dev/null | wc -l | tr -d ' ')
+PROC_D_NOTIF=$(sudo -n pgrep -f "battopt discharge" 2>/dev/null | wc -l | tr -d ' ')
 if [ "$PROC_D_NOTIF" = "0" ] && echo "$MODE" | grep -qE "^Holding at [0-9]+%$"; then
     HOLD_PCT=$(echo "$MODE" | grep -oE '[0-9]+' | head -1)
     if [ -n "$PCT" ] && [ -n "$HOLD_PCT" ]; then
@@ -627,7 +628,6 @@ echo "Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false"
 echo "Open BattOpt Logs | bash=/usr/bin/open param1=/Library/Logs/battopt/ terminal=false"
 echo "Open Actions Log | bash=$DISPATCH param1=open_actions_log terminal=false"
 echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
-echo "-- Restart daemon to reset trial | size=9 color=#909090 disabled=true"
 
 LOGIN_STATE=$(osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -c "BattOpt" || true)
 if [ "$LOGIN_STATE" -gt 0 ]; then
