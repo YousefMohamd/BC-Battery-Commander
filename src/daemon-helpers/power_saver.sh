@@ -15,8 +15,8 @@ apply_delays() {
 
     case "$profile" in
         default)
-            battery_high=2700
-            battery_low=2700
+            battery_high=1800
+            battery_low=1800
             battery_auto=1800
             ac_high=3600
             ac_low=3600
@@ -43,8 +43,8 @@ apply_delays() {
             ;;
         *)
             profile=default
-            battery_high=2700
-            battery_low=2700
+            battery_high=1800
+            battery_low=1800
             battery_auto=1800
             ac_high=3600
             ac_low=3600
