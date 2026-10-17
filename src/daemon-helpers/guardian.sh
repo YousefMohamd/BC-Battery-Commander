@@ -29,6 +29,16 @@ guarded() {
     return 0
 }
 
+# guarded_except: allow mutation even if active_mode is in exception list
+guarded_except() {
+    local mode
+    mode=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
+    for ex in "$@"; do
+        [ "$mode" = "$ex" ] && return 0
+    done
+    guarded
+}
+
 heartbeat() {
         local _ncr
     _ncr=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)

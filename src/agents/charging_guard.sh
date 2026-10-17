@@ -19,10 +19,15 @@ if [ -f "$COOLDOWN" ]; then
     rm -f "$COOLDOWN"
 fi
 
-# Read state
-IOREG=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+# Read state with retry (ioreg can be empty under load)
+IOREG=""
+for _try in 1 2 3; do
+    IOREG=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+    [ -n "$IOREG" ] && break
+    sleep 0.2
+done
 if [ -z "$IOREG" ]; then
-    echo "[$(date '+%H:%M:%S')] charging_guard: ioreg FAILED (empty)" >> "$LOG"
+    echo "[$(date '+%H:%M:%S')] charging_guard: ioreg FAILED after 3 retries" >> "$LOG"
     exit 0
 fi
 ISCHG=$(echo "$IOREG" | grep -oE '"IsCharging" = [A-Za-z]+' | awk '{print $3}')
@@ -54,9 +59,24 @@ if ! guard_lock; then
     echo "[$(date '+%H:%M:%S')] charging_guard: lock failed — skipping" >> "$LOG"
     exit 0
 fi
+# Re-check mode after acquiring lock (avoid stale read)
+MODE2=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
+case "$MODE2" in
+    charge_full|discharge|calibration)
+        guard_unlock
+        exit 0
+        ;;
+esac
 echo "[$(date '+%H:%M:%S')] charging_guard: OVERSHOOT PCT=$PCT > UPPER=$UPPER — stopping charge" >> "$LOG"
 sudo -n "$BAT" charge stop >/dev/null 2>&1
 sleep 1
-sudo -n "$BAT" limit "$UPPER" "${LAST_LOWER:-80}" >/dev/null 2>&1
+sudo -n "$BAT" limit "$UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+# Verify SMC took effect
+V=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+if [ "$V" != "$UPPER" ]; then
+    sleep 1
+    sudo -n "$BAT" limit "$UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+    echo "[$(date '+%H:%M:%S')] charging_guard: verify-retry SMC=$V want=$UPPER" >> "$LOG"
+fi
 touch "$COOLDOWN"
 guard_unlock
