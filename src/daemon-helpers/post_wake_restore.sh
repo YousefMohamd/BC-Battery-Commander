@@ -11,4 +11,7 @@ log() { echo "[$(date '+%H:%M:%S')] post_wake: $1" >> "$LOG"; }
 
 log "Wake complete"
 rm -f "$HOME/.battopt-swiftbar/.armed_for_sleep" "$HOME/.battopt-swiftbar/.pre_sleep_done"
+# Cancel RTC maintenance wakes (they drain battery overnight)
+sudo -n /usr/bin/pmset schedule cancelall 2>/dev/null || true
+
 exit 0

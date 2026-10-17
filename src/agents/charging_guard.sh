@@ -9,6 +9,9 @@ COOLDOWN="$DASH/.charging_guard_cooldown"
 
 [ -f "$DASH/.user_shutdown" ] && exit 0
 
+# Serialize with ac_watcher/guardian via state_guard lock
+source "$DASH/state_guard.sh" 2>/dev/null || true
+
 # Cooldown (30s) to avoid spamming charge stop
 if [ -f "$COOLDOWN" ]; then
     AGE=$(( $(date +%s) - $(stat -f %m "$COOLDOWN" 2>/dev/null || echo 0) ))
@@ -17,7 +20,11 @@ if [ -f "$COOLDOWN" ]; then
 fi
 
 # Read state
-IOREG=$(ioreg -rn AppleSmartBattery 2>/dev/null) || exit 0
+IOREG=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+if [ -z "$IOREG" ]; then
+    echo "[$(date '+%H:%M:%S')] charging_guard: ioreg FAILED (empty)" >> "$LOG"
+    exit 0
+fi
 ISCHG=$(echo "$IOREG" | grep -oE '"IsCharging" = [A-Za-z]+' | awk '{print $3}')
 EXT=$(echo "$IOREG" | grep -oE '"ExternalConnected" = [A-Za-z]+' | awk '{print $3}')
 CUR=$(echo "$IOREG" | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
@@ -43,8 +50,13 @@ case "$MODE" in
 esac
 
 # OVERSHOOT DETECTED — act immediately
+if ! guard_lock; then
+    echo "[$(date '+%H:%M:%S')] charging_guard: lock failed — skipping" >> "$LOG"
+    exit 0
+fi
 echo "[$(date '+%H:%M:%S')] charging_guard: OVERSHOOT PCT=$PCT > UPPER=$UPPER — stopping charge" >> "$LOG"
 sudo -n "$BAT" charge stop >/dev/null 2>&1
 sleep 1
 sudo -n "$BAT" limit "$UPPER" "${LAST_LOWER:-80}" >/dev/null 2>&1
 touch "$COOLDOWN"
+guard_unlock
