@@ -37,10 +37,12 @@ if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
     # Respect active session — do NOT override charge_full / discharge / calibration
     ACTIVE_MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
     [ -z "$ACTIVE_MODE" ] && ACTIVE_MODE="idle"
-    if guard_session_active; then
-        log "AC CONNECTED — skipping (active_mode=$ACTIVE_MODE)"
-        exit 0
-    fi
+    case "$ACTIVE_MODE" in
+        charge_full|discharge|calibration)
+            log "AC CONNECTED — skipping (active_mode=$ACTIVE_MODE)"
+            exit 0
+            ;;
+    esac
     log "AC CONNECTED — reapplying intent"
     # Read current config
     [ -f "$CONFIG" ] && source "$CONFIG"
@@ -48,6 +50,13 @@ if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
     LOWER="${LAST_LOWER:-80}"
     # Reapply limit
     sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
+    sleep 1
+    V=$(sudo -n /usr/local/bin/battopt status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+    if [ "$V" != "$UPPER" ]; then
+        sleep 2
+        sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
+        log "AC CONNECTED — limit retry (was SMC=$V, want $UPPER)"
+    fi
     log "applied limit $UPPER/$LOWER after AC connect"
 elif [ "$PREV" = "Yes" ] && [ "$EXT" = "No" ]; then
     log "AC DISCONNECTED — sailing continues on battery"

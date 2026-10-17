@@ -141,6 +141,18 @@ fi
 
 fi
 
+# LAYER 2c: charging overshoot — catches ac_watcher miss
+ISCHG=$(echo "$IOREG" 2>/dev/null | grep -oE '"IsCharging" = [A-Za-z]+' | awk '{print $3}')
+if [ "$ISCHG" = "Yes" ] && [ -n "$PCT" ] && [ "$PCT" -gt "$UPPER" ]; then
+    case "$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')" in
+        charge_full|discharge|calibration) : ;;
+        *)
+            log "L2c: charging overshoot PCT=$PCT > UPPER=$UPPER — forcing limit"
+            sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
+            ;;
+    esac
+fi
+
 # LAYER 3: Config is source of truth
 HOLD_SINCE="$HOME/.battopt-swiftbar/.hold_since"
 AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')

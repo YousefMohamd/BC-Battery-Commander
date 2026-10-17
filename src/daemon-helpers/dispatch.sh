@@ -75,6 +75,9 @@ save_last_input() {
 }
 
 
+# HOLD_ON_SLEEP default
+HOLD_ON_SLEEP="${HOLD_ON_SLEEP:-true}"
+
 save_cfg() {
     cat > "$CFG" <<EOF
 LAST_UPPER=$LAST_UPPER
@@ -985,6 +988,15 @@ AS
         release
         intent_apply sail_off ;;
 
+    hold_on_sleep_toggle)
+        acquire
+        [ -f "$CFG" ] && source "$CFG"
+        HOLD_ON_SLEEP=$([ "$HOLD_ON_SLEEP" = "true" ] && echo false || echo true)
+        save_cfg
+        log "hold_on_sleep: $HOLD_ON_SLEEP"
+        notify "BattOpt" "Hold on Sleep: $HOLD_ON_SLEEP"
+        release ;;
+
     sail_gap_set)
         G="$2"
         acquire
@@ -1598,6 +1610,7 @@ AS
         ;;
 
     power_mode_balanced)
+        # pmset only — never battopt limit (prevents regression)
         acquire
         ~/.battopt-swiftbar/power_mode.sh balanced
         notify "BattOpt" "Power Mode: Balanced"

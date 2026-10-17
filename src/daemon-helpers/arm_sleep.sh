@@ -45,6 +45,18 @@ case "$SLEEP_MODE" in
         esac
         ;;
 esac
+# Hold-on-Sleep: optionally force static hold before applying delays
+source "$HOME/.battopt-swiftbar/config" 2>/dev/null || true
+HOLD_ON_SLEEP="${HOLD_ON_SLEEP:-true}"
+if [ "$HOLD_ON_SLEEP" = "true" ] && [ -n "$LAST_UPPER" ]; then
+    _LOWER=$((LAST_UPPER - 1))
+    [ "$_LOWER" -lt 20 ] && _LOWER=20
+    sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "$_LOWER" >> "$LOG" 2>&1
+    log "arm_sleep: HOLD_ON_SLEEP=true → static hold $LAST_UPPER/$_LOWER"
+else
+    sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+    log "arm_sleep: HOLD_ON_SLEEP=$HOLD_ON_SLEEP → applied $LAST_UPPER/${LAST_LOWER:-80}"
+fi
 "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
 log "Applied sleep delay profile: $APPLY_PROFILE"
 

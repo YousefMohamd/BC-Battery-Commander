@@ -548,6 +548,11 @@ echo "-- ───────────────────────�
 echo "-- Static Hold | bash=$DISPATCH param1=sail_off terminal=false refresh=true checked=$([ "$SAILING" = "false" ] && echo true || echo false) size=12"
 echo "-- Battery frozen at ${UPPER}% | size=9 color=#909090 disabled=true"
 
+# Hold on Sleep toggle
+[ -z "$HOLD_ON_SLEEP" ] && HOLD_ON_SLEEP=$([ "$(grep HOLD_ON_SLEEP "$MYCFG" 2>/dev/null | cut -d= -f2)" = "false" ] && echo false || echo true)
+echo "-- Hold on Sleep | bash=$DISPATCH param1=hold_on_sleep_toggle terminal=false refresh=true checked=$([ "$HOLD_ON_SLEEP" = "true" ] && echo true || echo false) size=12"
+echo "-- Force static hold when sleeping | size=9 color=#909090 disabled=true"
+
 # Sailing — separate sibling submenu
 echo "Sailing — $([ "$SAILING" = "true" ] && echo "ON (${LOWER}-${UPPER}%)" || echo "OFF") | size=13 color=#FFFFFF"
 echo "-- Enable Sailing | bash=$DISPATCH param1=sail_on terminal=false refresh=true checked=$([ "$SAILING" = "true" ] && echo true || echo false) size=12"
