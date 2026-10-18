@@ -77,19 +77,34 @@ case "$ACTIVE_MODE" in
         sudo -n /usr/local/bin/battopt charge stop >/dev/null 2>&1 || true
         sleep 1
 
-        # Hold-on-Sleep: optionally force static hold before applying delays
+        # CHARGE_MODE governs sleep-time charging behavior (replaces HOLD_ON_SLEEP-only logic)
         source "$HOME/.battopt-swiftbar/config" 2>/dev/null || true
-        HOLD_ON_SLEEP="${HOLD_ON_SLEEP:-true}"
+        CHARGE_MODE="${CHARGE_MODE:-follow}"
 
-        if [ "$HOLD_ON_SLEEP" = "true" ] && [ -n "$LAST_UPPER" ]; then
-            _LOWER=$((LAST_UPPER - 1))
-            [ "$_LOWER" -lt 20 ] && _LOWER=20
-            sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "$_LOWER" >> "$LOG" 2>&1
-            log "arm_sleep: HOLD_ON_SLEEP=true → static hold $LAST_UPPER/$_LOWER"
-        else
-            sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
-            log "arm_sleep: HOLD_ON_SLEEP=$HOLD_ON_SLEEP → applied $LAST_UPPER/${LAST_LOWER:-80}"
-        fi
+        case "$CHARGE_MODE" in
+            hold)
+                # Freeze at current % for the whole sleep
+                _CUR=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
+                _MAXC=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"MaxCapacity" = [0-9]+' | awk '{print $3}')
+                if [ -n "$_CUR" ] && [ -n "$_MAXC" ] && [ "$_MAXC" -gt 0 ]; then
+                    _PCT=$(( (_CUR * 100 + _MAXC / 2) / _MAXC ))
+                    _LOWER=$((_PCT - 1))
+                    [ "$_LOWER" -lt 20 ] && _LOWER=20
+                    sudo -n /usr/local/bin/battopt limit "$_PCT" "$_LOWER" >> "$LOG" 2>&1
+                    log "arm_sleep: CHARGE_MODE=hold → frozen at $_PCT/$_LOWER"
+                fi
+                ;;
+            limit)
+                # Cap at LAST_UPPER, do not oscillate
+                sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "$((LAST_UPPER - 1))" >> "$LOG" 2>&1
+                log "arm_sleep: CHARGE_MODE=limit → $LAST_UPPER/$((LAST_UPPER - 1))"
+                ;;
+            follow|*)
+                # Follow existing SAILING/SAIL_GAP config
+                sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+                log "arm_sleep: CHARGE_MODE=follow → $LAST_UPPER/${LAST_LOWER:-80}"
+                ;;
+        esac
 
         # === TASK 3B FIX: Sleep-time overshoot guard ===
         # If battery is already above target, stop charging immediately

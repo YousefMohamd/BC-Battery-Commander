@@ -507,6 +507,8 @@ echo "-- ───────────────────────�
 
 # Hold on Sleep toggle (dynamic checkbox)
 [ -z "$HOLD_ON_SLEEP" ] && HOLD_ON_SLEEP=$([ "$(grep '^HOLD_ON_SLEEP=' "$MYCFG" 2>/dev/null | cut -d= -f2)" = "false" ] && echo false || echo true)
+[ -z "$CHARGE_MODE" ] && CHARGE_MODE=$(grep '^CHARGE_MODE=' "$MYCFG" 2>/dev/null | cut -d= -f2)
+[ -z "$CHARGE_MODE" ] && CHARGE_MODE="follow"
 echo "-- Hold on Sleep | bash=$DISPATCH param1=hold_on_sleep_toggle terminal=false refresh=true checked=$([ "$HOLD_ON_SLEEP" = "true" ] && echo true || echo false) size=12"
 echo "-- Force static hold when sleeping | size=9 color=#909090 disabled=true"
 # === SLEEP OVERRIDES ===
@@ -551,6 +553,16 @@ if [ "$ACTIVE_MODE" = "idle" ]; then
 else
     echo "Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
 fi
+
+# Charge Mode — 3-state cycle
+case "$CHARGE_MODE" in
+    follow) CM_LABEL="Follow config" ;;
+    limit)  CM_LABEL="Limit at ${UPPER}%" ;;
+    hold)   CM_LABEL="Hold now" ;;
+    *)      CM_LABEL="Follow config" ;;
+esac
+echo "Charge Mode — ${CM_LABEL} | bash=$DISPATCH param1=charge_mode_cycle terminal=false refresh=true"
+echo "-- Cycle: Follow → Limit → Hold | size=9 color=#909090 disabled=true"
 
 # Hold Mode — static only
 echo "Hold Mode — Static at ${UPPER}% | size=13 color=#FFFFFF"

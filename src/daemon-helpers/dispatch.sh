@@ -77,6 +77,8 @@ save_last_input() {
 
 # HOLD_ON_SLEEP default
 HOLD_ON_SLEEP="${HOLD_ON_SLEEP:-true}"
+# CHARGE_MODE default: follow|limit|hold
+CHARGE_MODE="${CHARGE_MODE:-follow}"
 
 save_cfg() {
     cat > "$CFG" <<EOF
@@ -85,6 +87,7 @@ LAST_LOWER=$LAST_LOWER
 SAILING=$SAILING
 SAIL_GAP=$SAIL_GAP
 HOLD_ON_SLEEP=$HOLD_ON_SLEEP
+CHARGE_MODE=$CHARGE_MODE
 EOF
 }
 
@@ -996,6 +999,37 @@ AS
         save_cfg
         log "hold_on_sleep: $HOLD_ON_SLEEP"
         notify "BattOpt" "Hold on Sleep: $HOLD_ON_SLEEP"
+        release ;;
+
+    charge_mode_cycle)
+        acquire
+        [ -f "$CFG" ] && source "$CFG"
+        case "$CHARGE_MODE" in
+            follow) CHARGE_MODE="limit" ;;
+            limit)  CHARGE_MODE="hold" ;;
+            hold)   CHARGE_MODE="follow" ;;
+            *)      CHARGE_MODE="follow" ;;
+        esac
+        save_cfg
+        log "charge_mode: $CHARGE_MODE"
+        # Apply behavior immediately
+        CUR=$(get_pct)
+        case "$CHARGE_MODE" in
+            hold)
+                _U=$CUR
+                _L=$((CUR - 1))
+                [ "$_L" -lt 20 ] && _L=20
+                run_with_retry limit "$_U" "$_L" >> "$LOG" 2>&1
+                notify "BattOpt" "Charge Mode: HOLD at ${CUR}%"
+                ;;
+            limit)
+                run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
+                notify "BattOpt" "Charge Mode: LIMIT at ${LAST_UPPER}%"
+                ;;
+            follow)
+                notify "BattOpt" "Charge Mode: FOLLOW (Sailing ${LAST_UPPER}/${LAST_LOWER})"
+                ;;
+        esac
         release ;;
 
     sail_gap_set)
