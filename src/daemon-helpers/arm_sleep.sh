@@ -17,6 +17,7 @@ fi
 # Kills audio apps, runs cleanup, arms PowerWatch
 
 LOG="$HOME/.battopt-swiftbar/actions.log"
+SD_WATCHER="$HOME/.battopt-swiftbar/.sd_watch"
 log() { echo "[$(date '+%H:%M:%S')] arm_sleep: $1" >> "$LOG"; }
 
 log "=== ARM SLEEP START ==="
@@ -45,20 +46,69 @@ case "$SLEEP_MODE" in
         esac
         ;;
 esac
-# Hold-on-Sleep: optionally force static hold before applying delays
-source "$HOME/.battopt-swiftbar/config" 2>/dev/null || true
-HOLD_ON_SLEEP="${HOLD_ON_SLEEP:-true}"
-if [ "$HOLD_ON_SLEEP" = "true" ] && [ -n "$LAST_UPPER" ]; then
-    _LOWER=$((LAST_UPPER - 1))
-    [ "$_LOWER" -lt 20 ] && _LOWER=20
-    sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "$_LOWER" >> "$LOG" 2>&1
-    log "arm_sleep: HOLD_ON_SLEEP=true → static hold $LAST_UPPER/$_LOWER"
-else
-    sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
-    log "arm_sleep: HOLD_ON_SLEEP=$HOLD_ON_SLEEP → applied $LAST_UPPER/${LAST_LOWER:-80}"
-fi
-"$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
-log "Applied sleep delay profile: $APPLY_PROFILE"
+
+# === TASK 2 FIX: Respect active discharge/charge_full ===
+ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null)
+case "$ACTIVE_MODE" in
+    discharge)
+        log "arm_sleep: active discharge detected — preserving (no limit change)"
+        # Skip limit change entirely; discharge watcher handles the session
+        # Still apply sleep profile (powernap, womp, etc.)
+        "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
+        log "Applied sleep delay profile: $APPLY_PROFILE"
+        ;;
+    charge_full)
+        log "arm_sleep: active charge_full detected — preserving (no limit change)"
+        # charge_full watcher is running; do not interrupt
+        "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
+        log "Applied sleep delay profile: $APPLY_PROFILE"
+        ;;
+    calibration)
+        log "arm_sleep: active calibration detected — preserving (no limit change)"
+        "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
+        log "Applied sleep delay profile: $APPLY_PROFILE"
+        ;;
+    *)
+        # Idle — apply HOLD_ON_SLEEP normally
+
+        # === TASK 3A FIX: Stop charge before limit change ===
+        # Kill any pending charge processes to prevent SMC release race
+        sudo pkill -9 -f "battopt charge " 2>/dev/null || true
+        sudo -n /usr/local/bin/battopt charge stop >/dev/null 2>&1 || true
+        sleep 1
+
+        # Hold-on-Sleep: optionally force static hold before applying delays
+        source "$HOME/.battopt-swiftbar/config" 2>/dev/null || true
+        HOLD_ON_SLEEP="${HOLD_ON_SLEEP:-true}"
+
+        if [ "$HOLD_ON_SLEEP" = "true" ] && [ -n "$LAST_UPPER" ]; then
+            _LOWER=$((LAST_UPPER - 1))
+            [ "$_LOWER" -lt 20 ] && _LOWER=20
+            sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "$_LOWER" >> "$LOG" 2>&1
+            log "arm_sleep: HOLD_ON_SLEEP=true → static hold $LAST_UPPER/$_LOWER"
+        else
+            sudo -n /usr/local/bin/battopt limit "$LAST_UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+            log "arm_sleep: HOLD_ON_SLEEP=$HOLD_ON_SLEEP → applied $LAST_UPPER/${LAST_LOWER:-80}"
+        fi
+
+        # === TASK 3B FIX: Sleep-time overshoot guard ===
+        # If battery is already above target, stop charging immediately
+        _CUR=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
+        _MAXC=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"MaxCapacity" = [0-9]+' | awk '{print $3}')
+        if [ -n "$_CUR" ] && [ -n "$_MAXC" ] && [ "$_MAXC" -gt 0 ]; then
+            _PCT=$(( (_CUR * 100 + _MAXC / 2) / _MAXC ))
+            if [ "$_PCT" -gt "$LAST_UPPER" ]; then
+                log "arm_sleep: overshoot guard — battery $_PCT% > limit $LAST_UPPER%, stopping charge"
+                sudo -n /usr/local/bin/battopt charge stop >/dev/null 2>&1 || true
+                sudo pkill -9 -f "battopt charge " 2>/dev/null || true
+            fi
+        fi
+
+        # Apply sleep profile (power_saver.sh sets standby, hibernatemode, etc.)
+        "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
+        log "Applied sleep delay profile: $APPLY_PROFILE"
+        ;;
+esac
 
 # 1. Kill audio apps completely (not just STOP)
 for app in VLC Spotify Music; do

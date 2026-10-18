@@ -374,6 +374,11 @@ echo "${ICON} ${SMC_PCT}% | size=14 ${FINAL_COLOR}"
 # === END TEMPERATURE COLOR ===
 echo "---"
 
+# === TASK 4: Services count in status line ===
+AGENT_COUNT=$(pgrep -fl "battopt|powerwatch|sd_watcher|guardian" 2>/dev/null | grep -v "pgrep\|dispatch\|battopt.10s" | wc -l | tr -d ' ')
+echo "Services: ${AGENT_COUNT} agents running | size=10 color=#606060"
+echo "---"
+
 echo "Charge: ${PCT}% | size=11"
 echo "Mode: ${MODE} | size=11"
 echo "Health: ${HEALTH}% - ${CYCLES} cycles | size=11 $GRAY"
@@ -868,4 +873,4 @@ else
     echo "battopt daemon: NOT RUNNING | size=11 color=red"
 fi
 echo "---"
-echo "Shut Down BattOpt... | bash=$DISPATCH param1=shutdown terminal=false refresh=true color=red"
+echo "Stop ALL Services (full shutdown) | bash=$DISPATCH param1=shutdown terminal=false refresh=true color=red"
