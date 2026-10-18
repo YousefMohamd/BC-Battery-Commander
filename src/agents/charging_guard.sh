@@ -48,31 +48,58 @@ UPPER=85
 # Skip if overshoot not happening
 [ "$PCT" -le "$UPPER" ] && exit 0
 
-# Skip if active session in progress
+# Read active mode
 MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
+# BUG #72 FIX: charge_full is a charging session — overshoot during charge_full
+# is exactly when we SHOULD intervene. Only block discharge/calibration.
 case "$MODE" in
-    charge_full|discharge|calibration) exit 0 ;;
+    discharge|calibration) exit 0 ;;
 esac
 
-# OVERSHOOT DETECTED — act immediately
-if ! guard_lock; then
-    echo "[$(date '+%H:%M:%S')] charging_guard: lock failed — skipping" >> "$LOG"
+# BUG #71 FIX: Retry lock acquisition instead of exiting on first failure.
+# A brief lock holder (e.g. dispatch) should not silently disarm us for 30s.
+_retries=3
+while [ $_retries -gt 0 ]; do
+    if guard_lock; then
+        break
+    fi
+    _retries=$((_retries - 1))
+    [ $_retries -gt 0 ] && sleep 0.5
+done
+if [ $_retries -eq 0 ]; then
+    echo "[$(date '+%H:%M:%S')] charging_guard: lock FAILED after 3 retries — deferring" >> "$LOG"
+    # BUG #73 FIX: Set cooldown even when deferring so we don't hammer retries.
+    touch "$COOLDOWN"
     exit 0
 fi
+
 # Re-check mode after acquiring lock (avoid stale read)
 MODE2=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
 case "$MODE2" in
-    charge_full|discharge|calibration)
+    discharge|calibration)
         guard_unlock
+        # BUG #73 FIX: Set cooldown before exiting so next poll cycle skips this.
+        touch "$COOLDOWN"
         exit 0
         ;;
+    # charge_full passes through — we handle overshoot during charge_full
 esac
+
+# BUG #74 FIX: Define _verify_smc_upper locally (was missing entirely).
+_verify_smc_upper() {
+    sudo -n "$BAT" status 2>/dev/null \
+        | grep -oE 'upper limit [0-9]+' \
+        | grep -oE '[0-9]+' \
+        | head -1
+}
+
+# OVERSHOOT DETECTED — act immediately
 echo "[$(date '+%H:%M:%S')] charging_guard: OVERSHOOT PCT=$PCT > UPPER=$UPPER — stopping charge" >> "$LOG"
 sudo -n "$BAT" charge stop >/dev/null 2>&1
 sleep 1
 sudo -n "$BAT" limit "$UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
 # Verify SMC took effect
-V=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+V=$(_verify_smc_upper)
 if [ "$V" != "$UPPER" ]; then
     sleep 1
     sudo -n "$BAT" limit "$UPPER" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
