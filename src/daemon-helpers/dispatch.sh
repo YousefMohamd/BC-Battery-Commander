@@ -225,6 +225,7 @@ _kill_transients() {
     sudo pkill -9 -f "battopt calibrate" 2>/dev/null || true
     sudo pkill -9 -f "sd_watcher.sh"     2>/dev/null || true
     sudo pkill -9 -f "charge_full"       2>/dev/null || true
+    sudo pkill -9 -f "charge_full: watcher" 2>/dev/null || true
     sudo -n "$BAT" charge stop    >/dev/null 2>&1 || true
     sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
     sudo -n "$BAT" calibrate stop >/dev/null 2>&1 || true
@@ -391,6 +392,7 @@ intent_apply() {
             ;;
 
         disable_limit)
+            rm -f "$D/.pre_charge_full_config"
             U=100; L=99
             run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
             V=$(_verify_smc_upper)
@@ -427,6 +429,13 @@ intent_apply() {
                 guard_unlock
                 return 1
             }
+            
+            # BACKUP current config before overwriting with 100/99
+            if [ -f "$CFG" ]; then
+                cp "$CFG" "$D/.pre_charge_full_config"
+                log "intent_apply charge_full: backed up config to .pre_charge_full_config"
+            fi
+            
             run_with_retry limit 100 99 >> "$LOG" 2>&1
             V=$(_verify_smc_upper)
             if [ "$V" != 100 ]; then
@@ -452,6 +461,12 @@ intent_apply() {
                     P=$(sudo -n "$B" status 2>/dev/null | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+" | head -1)
                     [ -n "$P" ] && [ "$P" -ge 99 ] && break
                 done
+                # ALWAYS restore pre-charge_full config (success OR timeout)
+                if [ -f "$D/.pre_charge_full_config" ]; then
+                    cat "$D/.pre_charge_full_config" > "$D/config"
+                    rm -f "$D/.pre_charge_full_config"
+                    echo "[$(date +%H:%M:%S)] charge_full watcher: config restored" >> "$L"
+                fi
                 if [ -n "$P" ] && [ "$P" -ge 99 ] && guard_token_matches "$T" 2>/dev/null; then
                     sudo -n "$B" charge stop >/dev/null 2>&1
                     sudo -n "$B" limit 99 98 >/dev/null 2>&1
@@ -748,6 +763,15 @@ CFGEOF
 
     stop_now)
         acquire; ensure_clean
+        sudo pkill -9 -f "battopt charge " 2>/dev/null || true
+        sudo pkill -9 -f "battopt charge_full" 2>/dev/null || true
+        sudo pkill -9 -f "charge_full" 2>/dev/null || true
+        if [ -f "$HOME/.battopt-swiftbar/.pre_charge_full_config" ]; then
+            cp "$HOME/.battopt-swiftbar/.pre_charge_full_config" "$HOME/.battopt-swiftbar/config"
+            source "$HOME/.battopt-swiftbar/config"
+            rm -f "$HOME/.battopt-swiftbar/.pre_charge_full_config"
+            log "stop_now: pre-charge_full config restored"
+        fi
         release
         intent_apply hold_current ;;
 
@@ -1034,6 +1058,11 @@ AS
 )
         [ "$CONFIRM" != "Shut Down" ] && { release; exit 0; }
         log "shutdown: START"
+        # TASK 1: Persist config BEFORE wiping state
+        if [ -f "$CFG" ]; then
+            cp "$CFG" "$HOME/.battopt-swiftbar/.last_session_config"
+            log "shutdown: backed up config to .last_session_config"
+        fi
         START_TS=$(date +%s)
 
         # 1. Set flag FIRST

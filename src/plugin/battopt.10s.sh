@@ -19,6 +19,12 @@ BATTOPT_ICON="$HOME/.battopt-swiftbar/icons/battopt.png"
 
 mkdir -p "$NOTIFY_DIR"
 
+# TASK 2: Immediate SwiftBar refresh trigger
+_refresh_plugin() {
+    /usr/bin/open -g "swiftbar://refreshplugin?name=battopt.10s" >/dev/null 2>&1 || true
+}
+trap '_refresh_plugin' EXIT
+
 LAST_UPPER=80; LAST_LOWER=75; SAILING=true; SAIL_GAP=10
 [ -f "$MYCFG" ] && source "$MYCFG"
 ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
@@ -275,6 +281,8 @@ elif [ "$PROC_CH" -gt 0 ]; then
 elif echo "$SNAP" | grep -q ", charging"; then
     if [ -n "$UPPER" ] && [ -n "$PCT" ] && [ "$PCT" -lt "$UPPER" ]; then
         MODE="Topping to ${UPPER}%"
+    elif [ "$ACTIVE_MODE" = "hold" ]; then
+        MODE="Holding at ${PCT}%"
     else
         MODE="Charging"
     fi

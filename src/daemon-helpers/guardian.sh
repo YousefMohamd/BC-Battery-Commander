@@ -168,7 +168,7 @@ ISCHG=$(echo "$IOREG" 2>/dev/null | grep -oE '"IsCharging" = [A-Za-z]+' | awk '{
 AM_L2C=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
 if [ "$AM_L2C" != "charge_full" ] && [ "$ISCHG" = "Yes" ] && [ -n "$PCT" ] && [ "$PCT" -gt "$UPPER" ]; then
     case "$AM_L2C" in
-        discharge|calibration) : ;;
+        discharge|calibration|hold) : ;;
         *)
             log "L2c: charging overshoot PCT=$PCT > UPPER=$UPPER — forcing limit"
             sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG" 2>&1

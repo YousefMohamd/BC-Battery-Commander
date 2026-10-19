@@ -8,6 +8,20 @@ DAEMON_PLIST="/Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist"
 
 log() { echo "[$(date '+%H:%M:%S')] BattOpt.app: $1" >> "$LOG"; }
 
+# TASK 1: Restore persisted config on boot
+BACKUP="$DASH/.last_session_config"
+CFG="$DASH/config"
+BAT="/usr/local/bin/battopt"
+if [ -f "$BACKUP" ]; then
+    log "launcher: found .last_session_config — restoring"
+    cp "$BACKUP" "$CFG"
+    if [ -f "$CFG" ]; then
+        source "$CFG"
+        sudo -n "$BAT" limit "${LAST_UPPER:-85}" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+        log "launcher: SMC limit restored to ${LAST_UPPER:-85}/${LAST_LOWER:-80}"
+    fi
+fi
+
 if [ -f "$LOCK_FILE" ]; then
     LOCK_AGE=$(( $(date +%s) - $(stat -f %m "$LOCK_FILE" 2>/dev/null || echo 0) ))
     if [ "$LOCK_AGE" -lt 30 ]; then
