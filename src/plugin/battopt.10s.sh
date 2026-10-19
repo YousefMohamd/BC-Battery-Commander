@@ -27,7 +27,10 @@ trap '_refresh_plugin' EXIT
 
 LAST_UPPER=80; LAST_LOWER=75; SAILING=true; SAIL_GAP=10
 [ -f "$MYCFG" ] && source "$MYCFG"
-ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
+ACTIVE_MODE="idle"
+if source "$HOME/.battopt-swiftbar/state_guard.sh" 2>/dev/null; then
+    ACTIVE_MODE=$(read_effective_session)
+fi
 [ -z "$ACTIVE_MODE" ] && ACTIVE_MODE="idle"
 
 # === STATUS CACHE (20s TTL) ===
@@ -248,13 +251,13 @@ PROC_D_NOW=$(sudo -n pgrep -f "battopt discharge" 2>/dev/null | wc -l | tr -d ' 
 PROC_CH_NOW=$(pgrep -f "battopt charge " 2>/dev/null | wc -l | tr -d ' ')
 PROC_CAL_NOW=$(pgrep -f "battopt calibrate" 2>/dev/null | wc -l | tr -d ' ')
 
-if [ "$PROC_D_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "discharge" ]; then
+if [ "$ICON_ACTIVE" = "discharge" ]; then
     ICON="🔋"
-elif [ "$PROC_CAL_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "calibration" ]; then
+elif [ "$ICON_ACTIVE" = "calibration" ]; then
     ICON="⚡"
 elif [ "$ICON_ACTIVE" = "hold" ]; then
     ICON="🔌"
-elif [ "$PROC_CH_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "charge_full" ]; then
+elif [ "$ICON_ACTIVE" = "charge_full" ]; then
     ICON="⚡"
 elif [ "$ICON_ISCHG" = "Yes" ]; then
     ICON="⚡"
@@ -274,12 +277,12 @@ fi
 # === MODE text ===
 if [ "$ACTIVE_MODE" = "charge_full" ]; then
     MODE="Charging to 100%"
-elif [ "$PROC_C" -gt 0 ]; then
+elif [ "$ACTIVE_MODE" = "calibration" ]; then
     MODE="Calibrating"
-elif [ "$PROC_D" -gt 0 ]; then
+elif [ "$ACTIVE_MODE" = "discharge" ]; then
     MODE="Discharging to ${LAST_UPPER}%"
-elif [ "$PROC_CH" -gt 0 ]; then
-    MODE="Charging to 100%"
+elif [ "$ACTIVE_MODE" = "hold" ]; then
+    MODE="Holding at ${PCT}%"
 elif echo "$SNAP" | grep -q ", charging"; then
     if [ -n "$UPPER" ] && [ -n "$PCT" ] && [ "$PCT" -lt "$UPPER" ]; then
         MODE="Topping to ${UPPER}%"
@@ -312,7 +315,7 @@ STATE=$(echo "$SNAP" | grep -oE ', (charging|discharging|no charging)' | head -1
 
 # === HOLD REACHED NOTIFICATION (Layer 18d — precise) ===
 PROC_D_NOTIF=$(sudo -n pgrep -f "battopt discharge" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$PROC_D_NOTIF" = "0" ] && echo "$MODE" | grep -qE "^Holding at [0-9]+%$"; then
+if [ "$ACTIVE_MODE" != "discharge" ] && echo "$MODE" | grep -qE "^Holding at [0-9]+%$"; then
     HOLD_PCT=$(echo "$MODE" | grep -oE '[0-9]+' | head -1)
     if [ -n "$PCT" ] && [ -n "$HOLD_PCT" ]; then
         DIFF=$((PCT - HOLD_PCT))

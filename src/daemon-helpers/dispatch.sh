@@ -249,15 +249,29 @@ _verify_smc_upper() {
 intent_apply() {
     local kind="$1"; shift
     case "$kind" in
-        limit) submit_request "user" "set_limit" "$1" "$2" "$3" "$4" "-" "0" ;;
+        limit) 
+            local sailing
+            case "$3" in
+                Hold|false) sailing=false ;;
+                Sailing|Sail|true) sailing=true ;;
+                *) log "Invalid limit mode: $3"; return 1 ;;
+            esac
+            submit_request "user" "set_limit" "$1" "$2" "$sailing" "$4" "-" "0" 
+            ;;
         hold_current) submit_request "user" "hold_current" "-" "-" "-" "-" "-" "0" ;;
         disable_limit) submit_request "user" "disable_limit" "-" "-" "-" "-" "-" "0" ;;
         charge_full) submit_request "user" "charge_full" "-" "-" "-" "-" "-" "0" ;;
         smart_discharge) submit_request "user" "smart_discharge" "$1" "$2" "$3" "$4" "-" "0" ;;
         calibration_start) submit_request "user" "calibration_start" "-" "-" "-" "-" "-" "0" ;;
         calibration_stop) submit_request "user" "calibration_stop" "-" "-" "-" "-" "-" "0" ;;
-        *) log "Unknown intent: $kind" ;;
+        *) log "Unknown intent: $kind"; return 1 ;;
     esac
+    local rc=$?
+    if [ "$rc" -ne 0 ]; then
+        log "Request failed: $kind (rc=$rc)"
+        notify "BattOpt" "Could not queue: $kind"
+        return "$rc"
+    fi
     notify "BattOpt" "Queued: $kind"
     return 0
 }
@@ -607,7 +621,7 @@ AS
         intent_apply smart_discharge "$T" "$LOW" "$MODE" "$G" ;;
 
     limit_custom)
-        acquire
+        acquire request_only request_only
         CUR=$(get_pct)
         DEF=$(get_last_input LIMIT_CUSTOM "")
         [ -z "$DEF" ] && DEF="${LAST_UPPER}/${LAST_LOWER}"
