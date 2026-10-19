@@ -9,6 +9,8 @@ BAT="$6"
 DASH="$HOME/.battopt-swiftbar"
 STATE_GUARD="$DASH/state_guard.sh"
 source "$STATE_GUARD" 2>/dev/null || exit 1
+trap 'exit 0' TERM INT
+# Do not use set -e — sudo -n failures must be handled explicitly
 # SD_ID is the guarded ownership token stored in .sd_session.
 
 [ -z "$SD_ID" ] && exit 1
@@ -40,9 +42,11 @@ finish_discharge() {
         return 0
     }
 
-    sudo -n "$BAT" limit "$T" "$LOW" >/dev/null 2>&1
+    if ! sudo -n "$BAT" limit "$T" "$LOW" >> "$LOG" 2>&1; then
+        echo "[$(date +%H:%M:%S)] sd_watcher: limit $T/$LOW failed" >> "$LOG"
+    fi
     echo "[$(date +%H:%M:%S)] sd_watcher: $message" >> "$LOG"
-    sudo -n "$BAT" discharge stop >/dev/null 2>&1
+    sudo -n "$BAT" discharge stop >/dev/null 2>&1 || echo "[$(date +%H:%M:%S)] sd_watcher: discharge stop failed" >> "$LOG"
     sudo pkill -9 -f '/usr/local/bin/battopt discharge ' 2>/dev/null || true
     # We already hold guard_lock and verified SD_ID = SESSION_FILE, so it is
     # safe to write idle directly.
@@ -56,10 +60,18 @@ for i in $(seq 1 720); do
     sleep 10
     CURRENT=$(cat "$SESSION_FILE" 2>/dev/null || echo "none")
     if [ "$CURRENT" != "$SD_ID" ]; then
+        sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
         echo "[$(date +%H:%M:%S)] sd_watcher: session invalidated" >> "$LOG"
         exit 0
     fi
-    P=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'Capacity [0-9]+' | grep -oE '[0-9]+' | head -1)
+    guard_token_matches "$SD_ID" 2>/dev/null || { sudo -n "$BAT" discharge stop >/dev/null 2>&1; exit 0; }
+    CUR=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
+    MAX=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"MaxCapacity" = [0-9]+' | awk '{print $3}')
+    if [ -n "$CUR" ] && [ -n "$MAX" ] && [ "$MAX" -gt 0 ]; then
+        P=$(( (CUR*100+MAX/2)/MAX ))
+    else
+        P=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'Capacity [0-9]+' | grep -oE '[0-9]+' | head -1)
+    fi
     if [ -n "$P" ] && [ "$P" -le "$T" ]; then
         finish_discharge "reached ${P}% — limit ${T}/${LOW}"
         exit 0
