@@ -67,14 +67,65 @@ while true; do
             
             case "$R_ACTION" in
                 set_limit)
-                    sudo -n "$BAT" limit "$R_A1" "$R_A2" >> "$LOG" 2>&1
-                    # Save config
-                    echo "LAST_UPPER=$R_A1" > "$DASH/config"
-                    echo "LAST_LOWER=$R_A2" >> "$DASH/config"
-                    echo "SAILING=$R_A3" >> "$DASH/config"
-                    echo "SAIL_GAP=$R_A4" >> "$DASH/config"
+                    if ! [[ "$R_A1" =~ ^[0-9]+$ &&
+                            "$R_A2" =~ ^[0-9]+$ &&
+                            "$R_A4" =~ ^[0-9]+$ ]] ||
+                       [ "$R_A1" -lt 50 ] || [ "$R_A1" -gt 100 ] ||
+                       [ "$R_A2" -lt 20 ] || [ "$R_A2" -ge "$R_A1" ] ||
+                       [ "$R_A4" -lt 1 ] || [ "$R_A4" -gt 30 ] ||
+                       { [ "$R_A3" != "true" ] && [ "$R_A3" != "false" ]; }; then
+                        log "Rejected invalid set_limit arguments"
+                        sleep 1
+                        continue
+                    fi
+
+                    if [ "$CURRENT_MODE" = "discharge" ]; then
+                        if ! sudo -n "$BAT" discharge stop >> "$LOG" 2>&1; then
+                            log "set_limit: discharge stop failed; config and session unchanged"
+                            sleep 1
+                            continue
+                        fi
+
+                        # Wait at most five seconds for the tracked client to exit.
+                        DIS_WAIT=0
+                        while kill -0 "$DIS_PID" 2>/dev/null &&
+                              [ "$DIS_WAIT" -lt 50 ]; do
+                            sleep 0.1
+                            DIS_WAIT=$((DIS_WAIT + 1))
+                        done
+                        if kill -0 "$DIS_PID" 2>/dev/null; then
+                            log "set_limit: discharge still running after five seconds; request abandoned"
+                            sleep 1
+                            continue
+                        fi
+                        wait "$DIS_PID" 2>/dev/null || true
+                    fi
+
+                    if ! sudo -n "$BAT" limit "$R_A1" "$R_A2" >> "$LOG" 2>&1; then
+                        log "set_limit failed; config and session unchanged"
+                        sleep 1
+                        continue
+                    fi
+
+                    CONFIG_CONTENT=$(
+                        if [ -f "$DASH/config" ]; then
+                            grep -vE '^(LAST_UPPER|LAST_LOWER|SAILING|SAIL_GAP)=' "$DASH/config"
+                        fi
+                        printf 'LAST_UPPER=%s\nLAST_LOWER=%s\nSAILING=%s\nSAIL_GAP=%s\n' \
+                            "$R_A1" "$R_A2" "$R_A3" "$R_A4"
+                    )
+                    if ! atomic_write "$DASH/config" "$CONFIG_CONTENT"$'\n'; then
+                        log "set_limit: hardware applied, but config save failed"
+                        sleep 1
+                        continue
+                    fi
+
                     CURRENT_MODE="idle"; CURRENT_TOKEN="-"
-                    echo "1|$OWNER_ID|-|idle|running|-|-|-|-|$(date +%s)|0" > "$SG_SESSION"
+                    atomic_write "$SG_SESSION" \
+                        "1|$OWNER_ID|-|idle|running|-|-|-|-|$(date +%s)|0"$'\n'
+                    atomic_write "$SG_MODE" $'idle\n'
+                    rm -f "$SG_TOKEN" "$DASH/.status_cache"
+                    touch_heartbeat "$OWNER_ID" "-" "idle"
                     ;;
                 hold_current)
                     CUR=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'Capacity [0-9]+' | grep -oE '[0-9]+' | head -1)
@@ -89,7 +140,7 @@ while true; do
                         CURRENT_MODE="hold"
                         CURRENT_TOKEN="tok_${OWNER_ID}_${now}"
                         echo "1|$OWNER_ID|$CURRENT_TOKEN|hold|running|user|-|-|-|$now|0" > "$SG_SESSION"
-                        echo "hold" > "$SG_ACTIVE_MODE"
+                        echo "hold" > "$SG_MODE"
                         echo "$CURRENT_TOKEN" > "$SG_TOKEN"
                     fi
                     ;;
@@ -102,7 +153,7 @@ while true; do
                     CURRENT_MODE="discharge"
                     CURRENT_TOKEN="tok_${OWNER_ID}_${now}"
                     echo "1|$OWNER_ID|$CURRENT_TOKEN|discharge|running|guardian|$TARGET|$R_A1|$R_A2|$now|0" > "$SG_SESSION"
-                    echo "discharge" > "$SG_ACTIVE_MODE"
+                    echo "discharge" > "$SG_MODE"
                     echo "$CURRENT_TOKEN" > "$SG_TOKEN"
                     ;;
                 reconcile)
@@ -126,7 +177,7 @@ while true; do
             sudo -n "$BAT" limit "${LAST_UPPER:-85}" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
             CURRENT_MODE="idle"; CURRENT_TOKEN="-"
             echo "1|$OWNER_ID|-|idle|running|-|-|-|-|$now|0" > "$SG_SESSION"
-            echo "idle" > "$SG_ACTIVE_MODE"
+            echo "idle" > "$SG_MODE"
             rm -f "$SG_TOKEN"
         fi
     fi

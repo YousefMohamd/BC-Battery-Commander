@@ -94,7 +94,7 @@ check_heartbeat() {
 }
 
 read_effective_session() {
-    [ -f "$SG_SESSION" ] || echo "idle"
+    [ -f "$SG_SESSION" ] || { echo "idle"; return 0; }
     local sess=$(cat "$SG_SESSION")
     local s_mode=$(echo "$sess" | cut -d'|' -f4)
     local s_token=$(echo "$sess" | cut -d'|' -f3)
