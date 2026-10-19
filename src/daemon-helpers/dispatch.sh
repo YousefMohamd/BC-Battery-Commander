@@ -704,18 +704,17 @@ AS
             save_last_input SD_SAIL_GAP "$GAP"
         fi
 
-        save_last_input LIMIT_CUSTOM "$U/$L"
-
-        # Update config BEFORE intent_apply
+        # Compute request arguments; Sentinel owns config writes.
         if [ "$MODE" = "Hold" ]; then
-            SAILING=false; SAIL_GAP=1
-            LAST_LOWER=$((U - 1)); [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
+            GAP=1
+            L=$((U - 1))
         else
-            SAILING=true; SAIL_GAP="$GAP"
-            LAST_LOWER=$((U - GAP)); [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
+            L=$((U - GAP))
         fi
+        [ "$L" -lt 20 ] && L=20
+        save_last_input LIMIT_CUSTOM "$U/$L"
         release
-        intent_apply limit "$U" "$LAST_LOWER" "$MODE" "$GAP" ;;
+        intent_apply limit "$U" "$L" "$MODE" "$GAP" ;;
 
     sail_on)
         acquire
