@@ -1059,9 +1059,13 @@ AS
         [ "$CONFIRM" != "Shut Down" ] && { release; exit 0; }
         log "shutdown: START"
         # TASK 1: Persist config BEFORE wiping state
-        if [ -f "$CFG" ]; then
+        # If we were in charge_full mode, the REAL user config is in .pre_charge_full_config
+        if [ -f "$HOME/.battopt-swiftbar/.pre_charge_full_config" ]; then
+            cp "$HOME/.battopt-swiftbar/.pre_charge_full_config" "$HOME/.battopt-swiftbar/.last_session_config"
+            log "shutdown: backed up pre_charge_full config to .last_session_config"
+        elif [ -f "$CFG" ]; then
             cp "$CFG" "$HOME/.battopt-swiftbar/.last_session_config"
-            log "shutdown: backed up config to .last_session_config"
+            log "shutdown: backed up current config to .last_session_config"
         fi
         START_TS=$(date +%s)
 

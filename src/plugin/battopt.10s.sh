@@ -385,10 +385,6 @@ echo "${ICON} ${SMC_PCT}% | size=14 ${FINAL_COLOR}"
 # === END TEMPERATURE COLOR ===
 echo "---"
 
-# === TASK 4: Services count in status line ===
-AGENT_COUNT=$(launchctl list 2>/dev/null | grep -c "com.battopt")
-echo "Services: ${AGENT_COUNT} agents running | size=10 color=#606060"
-echo "---"
 
 echo "Charge: ${PCT}% | size=11"
 echo "Mode: ${MODE} | size=11"
@@ -870,4 +866,7 @@ else
     echo "battopt daemon: NOT RUNNING | size=11 color=red"
 fi
 echo "---"
+AGENT_COUNT=$(launchctl list 2>/dev/null | grep -c "com.battopt")
+echo "Services: ${AGENT_COUNT} agents loaded | size=11 color=#909090"
+
 echo "Stop ALL Services (full shutdown) | bash=$DISPATCH param1=shutdown terminal=false refresh=true color=red"
