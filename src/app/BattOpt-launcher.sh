@@ -74,11 +74,15 @@ for i in $(seq 1 24); do
 done
 
 # 7. Load user agents in parallel
+# Robust Agent Loading (macOS 10.15+)
+GUI_DOMAIN="gui/$(id -u)"
 for plist in "$HOME/Library/LaunchAgents/"com.battopt.*.plist; do
     [ -f "$plist" ] || continue
-    launchctl load "$plist" 2>/dev/null &
+    AGENT_NAME=$(basename "$plist" .plist)
+    launchctl enable "$GUI_DOMAIN/$AGENT_NAME" 2>/dev/null
+    launchctl bootstrap "$GUI_DOMAIN" "$plist" 2>/dev/null
+    launchctl load -w "$plist" 2>/dev/null
 done
-wait
 
 # 8. Reapply limit 85/80
 if [ -f "$DASH/config" ]; then
