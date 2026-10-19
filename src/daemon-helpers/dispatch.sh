@@ -76,9 +76,7 @@ save_last_input() {
 
 
 # HOLD_ON_SLEEP default
-HOLD_ON_SLEEP="${HOLD_ON_SLEEP:-true}"
 # CHARGE_MODE default: follow|limit|hold
-CHARGE_MODE="${CHARGE_MODE:-follow}"
 
 save_cfg() {
     cat > "$CFG" <<EOF
@@ -86,8 +84,6 @@ LAST_UPPER=$LAST_UPPER
 LAST_LOWER=$LAST_LOWER
 SAILING=$SAILING
 SAIL_GAP=$SAIL_GAP
-HOLD_ON_SLEEP=$HOLD_ON_SLEEP
-CHARGE_MODE=$CHARGE_MODE
 EOF
 }
 
@@ -146,20 +142,19 @@ preflight() {
 
 # Run battopt with auto-retry on "ongoing"
 run_with_retry() {
-    local out
-    out=$(sudo -n "$BAT" "$@" 2>&1)
-    local rc=$?
-    if [ $rc -ne 0 ] && echo "$out" | grep -q "ongoing"; then
-        log "run_with_retry: detected ongoing, clearing and retrying"
-        sudo pkill -9 -f "/usr/local/bin/battopt " 2>/dev/null
-        sudo -n "$BAT" discharge stop >/dev/null 2>&1
-        sudo -n "$BAT" calibrate stop >/dev/null 2>&1
-        sleep 1
-        out=$(sudo -n "$BAT" "$@" 2>&1)
-        rc=$?
+    local out rc
+    out=$(sudo -n "$BAT" "$@" 2>&1); rc=$?
+    if [ $rc -ne 0 ]; then
+        if echo "$out" | grep -q "ongoing"; then
+            log "run_with_retry: ongoing, clearing"
+            sudo pkill -9 -f "/usr/local/bin/battopt " 2>/dev/null; sleep 1
+            out=$(sudo -n "$BAT" "$@" 2>&1); rc=$?
+        elif echo "$out" | grep -q "no tty\|a password is required"; then
+            log "run_with_retry: sudo auth failed"
+            echo "$out"; return 127
+        fi
     fi
-    echo "$out"
-    return $rc
+    echo "$out"; return $rc
 }
 ensure_clean() {
     # Invalidate old discharge ownership before starting another operation.
@@ -425,6 +420,8 @@ intent_apply() {
             ;;
 
         charge_full)
+            # FIX: update config BEFORE charge so charging_guard.sh sees 100/99 not old 85
+            LAST_UPPER=100; LAST_LOWER=99; SAILING=false; SAIL_GAP=1; save_cfg
             echo "charge_full" > "$D/.active_mode"
             TOKEN=$(guard_token_write_locked charge_full) || {
                 echo "idle" > "$D/.active_mode"
@@ -991,46 +988,6 @@ AS
         acquire; ensure_clean
         release
         intent_apply sail_off ;;
-
-    hold_on_sleep_toggle)
-        acquire
-        [ -f "$CFG" ] && source "$CFG"
-        HOLD_ON_SLEEP=$([ "$HOLD_ON_SLEEP" = "true" ] && echo false || echo true)
-        save_cfg
-        log "hold_on_sleep: $HOLD_ON_SLEEP"
-        notify "BattOpt" "Hold on Sleep: $HOLD_ON_SLEEP"
-        release ;;
-
-    charge_mode_cycle)
-        acquire
-        [ -f "$CFG" ] && source "$CFG"
-        case "$CHARGE_MODE" in
-            follow) CHARGE_MODE="limit" ;;
-            limit)  CHARGE_MODE="hold" ;;
-            hold)   CHARGE_MODE="follow" ;;
-            *)      CHARGE_MODE="follow" ;;
-        esac
-        save_cfg
-        log "charge_mode: $CHARGE_MODE"
-        # Apply behavior immediately
-        CUR=$(get_pct)
-        case "$CHARGE_MODE" in
-            hold)
-                _U=$CUR
-                _L=$((CUR - 1))
-                [ "$_L" -lt 20 ] && _L=20
-                run_with_retry limit "$_U" "$_L" >> "$LOG" 2>&1
-                notify "BattOpt" "Charge Mode: HOLD at ${CUR}%"
-                ;;
-            limit)
-                run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
-                notify "BattOpt" "Charge Mode: LIMIT at ${LAST_UPPER}%"
-                ;;
-            follow)
-                notify "BattOpt" "Charge Mode: FOLLOW (Sailing ${LAST_UPPER}/${LAST_LOWER})"
-                ;;
-        esac
-        release ;;
 
     sail_gap_set)
         G="$2"

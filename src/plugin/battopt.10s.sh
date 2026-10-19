@@ -375,7 +375,7 @@ echo "${ICON} ${SMC_PCT}% | size=14 ${FINAL_COLOR}"
 echo "---"
 
 # === TASK 4: Services count in status line ===
-AGENT_COUNT=$(pgrep -fl "battopt|powerwatch|sd_watcher|guardian" 2>/dev/null | grep -v "pgrep\|dispatch\|battopt.10s" | wc -l | tr -d ' ')
+AGENT_COUNT=$(launchctl list 2>/dev/null | grep -c "com.battopt")
 echo "Services: ${AGENT_COUNT} agents running | size=10 color=#606060"
 echo "---"
 
@@ -501,16 +501,10 @@ echo "-- Long Tasks | bash=$DISPATCH param1=sleep_mode_download terminal=false r
 echo "-- Lid closed · AC required | size=9 color=#909090 disabled=true"
 echo "-- Travel | bash=$DISPATCH param1=sleep_mode_travel terminal=false refresh=true checked=$([ "$SM_STATE" = "travel" ] && echo true || echo false) size=12"
 echo "-- Battery holds longer (4h) | size=9 color=#909090 disabled=true"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 echo "-- Prepare for Sleep | bash=$DISPATCH param1=arm_sleep terminal=false refresh=true size=12 color=#007AFF"
 echo "-- Close audio apps · arm sleep | size=9 color=#909090 disabled=true"
-echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 
-# Hold on Sleep toggle (dynamic checkbox)
-[ -z "$HOLD_ON_SLEEP" ] && HOLD_ON_SLEEP=$([ "$(grep '^HOLD_ON_SLEEP=' "$MYCFG" 2>/dev/null | cut -d= -f2)" = "false" ] && echo false || echo true)
-[ -z "$CHARGE_MODE" ] && CHARGE_MODE=$(grep '^CHARGE_MODE=' "$MYCFG" 2>/dev/null | cut -d= -f2)
-[ -z "$CHARGE_MODE" ] && CHARGE_MODE="follow"
-echo "-- Hold on Sleep | bash=$DISPATCH param1=hold_on_sleep_toggle terminal=false refresh=true checked=$([ "$HOLD_ON_SLEEP" = "true" ] && echo true || echo false) size=12"
-echo "-- Force static hold when sleeping | size=9 color=#909090 disabled=true"
 # === SLEEP OVERRIDES ===
 ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null || echo "idle")
 if [ "$ACTIVE_MODE" = "hold" ]; then
@@ -554,42 +548,22 @@ else
     echo "Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
 fi
 
-# Charge Mode — 3-state cycle
-case "$CHARGE_MODE" in
-    follow) CM_LABEL="Follow config" ;;
-    limit)  CM_LABEL="Limit at ${UPPER}%" ;;
-    hold)   CM_LABEL="Hold now" ;;
-    *)      CM_LABEL="Follow config" ;;
-esac
-echo "Charge Mode — ${CM_LABEL} | bash=$DISPATCH param1=charge_mode_cycle terminal=false refresh=true"
-echo "-- Cycle: Follow → Limit → Hold | size=9 color=#909090 disabled=true"
 
-# Hold Mode — static only
-echo "Hold Mode — Static at ${UPPER}% | size=13 color=#FFFFFF"
+
+
 echo "-- How battery is held: | size=10 color=#909090 disabled=true"
 echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
-echo "-- Static Hold | bash=$DISPATCH param1=sail_off terminal=false refresh=true checked=$([ "$SAILING" = "false" ] && echo true || echo false) size=12"
-echo "-- Battery frozen at ${UPPER}% | size=9 color=#909090 disabled=true"
+
+echo "-- Follow Config | bash=$DISPATCH param1=charge_mode_follow terminal=false refresh=true checked=$([ "$CHARGE_MODE" = "follow" ] && echo true || echo false) size=12"
+
+echo "-- Static Limit (${UPPER}/${LOWER}) | bash=$DISPATCH param1=charge_mode_limit terminal=false refresh=true checked=$([ "$CHARGE_MODE" = "limit" ] && echo true || echo false) size=12"
+echo "-- Charge to ${UPPER}%, stop when hit | size=9 color=#909090 disabled=true"
+
+echo "-- Freeze Now | bash=$DISPATCH param1=charge_mode_hold terminal=false refresh=true checked=$([ "$CHARGE_MODE" = "hold" ] && echo true || echo false) size=12"
+echo "-- Hold current %, no charging | size=9 color=#909090 disabled=true"
 
 
 
-# Sailing — separate sibling submenu
-echo "Sailing — $([ "$SAILING" = "true" ] && echo "ON (${LOWER}-${UPPER}%)" || echo "OFF") | size=13 color=#FFFFFF"
-echo "-- Enable Sailing | bash=$DISPATCH param1=sail_on terminal=false refresh=true checked=$([ "$SAILING" = "true" ] && echo true || echo false) size=12"
-echo "-- Battery oscillates ${LOWER}-${UPPER}% | size=9 color=#909090 disabled=true"
-echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
-echo "-- Gap: 5% | bash=$DISPATCH param1=sail_gap_set param2=5 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "5" ] && echo true || echo false) size=12"
-echo "-- Gap: 10% | bash=$DISPATCH param1=sail_gap_set param2=10 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "10" ] && echo true || echo false) size=12"
-echo "-- Gap: 15% | bash=$DISPATCH param1=sail_gap_set param2=15 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "15" ] && echo true || echo false) size=12"
-echo "-- Gap: 30% | bash=$DISPATCH param1=sail_gap_set param2=30 terminal=false refresh=true checked=$([ "$SAIL_GAP" = "30" ] && echo true || echo false) size=12"
-case "$SAIL_GAP" in
-    5|10|15|30)
-        echo "-- Gap: Custom... | bash=$DISPATCH param1=sail_gap_set param2=custom terminal=false refresh=true checked=false size=12"
-        ;;
-    *)
-        echo "-- Gap: Custom (${SAIL_GAP}%)... | bash=$DISPATCH param1=sail_gap_set param2=custom terminal=false refresh=true checked=true size=12"
-        ;;
-esac
 
 # Main-level actions
 echo "Remove Limit (hold at current) | bash=$DISPATCH param1=remove_limit_hold terminal=false refresh=true"

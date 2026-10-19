@@ -47,13 +47,15 @@ case "$SLEEP_MODE" in
         ;;
 esac
 
-# === TASK 2 FIX: Respect active discharge/charge_full ===
-ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null)
+# Serialize on state_guard — prevents lost update vs dispatch intent_apply
+if [ -f "$HOME/.battopt-swiftbar/state_guard.sh" ]; then source "$HOME/.battopt-swiftbar/state_guard.sh"; fi
+if command -v guard_lock >/dev/null 2>&1; then guard_lock; ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null); guard_unlock; else ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null); fi
 case "$ACTIVE_MODE" in
     discharge)
-        log "arm_sleep: active discharge detected — preserving (no limit change)"
-        # Skip limit change entirely; discharge watcher handles the session
-        # Still apply sleep profile (powernap, womp, etc.)
+        log "arm_sleep: active discharge detected — hard-locking SMC"
+        source "$HOME/.battopt-swiftbar/config" 2>/dev/null
+        sudo -n /usr/local/bin/battopt limit "${LAST_UPPER:-85}" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+        log "arm_sleep: hard-locked SMC to ${LAST_UPPER:-85}/${LAST_LOWER:-80}"
         "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
         log "Applied sleep delay profile: $APPLY_PROFILE"
         ;;
