@@ -31,8 +31,23 @@ log() {
 
 source "$HOME/.battopt-swiftbar/state_guard.sh" || exit 1
 
+# Serialize state checks and all subsequent battery mutations with dispatch.
+guard_lock || exit 0
+trap 'guard_unlock' EXIT
+trap 'exit 0' TERM INT
+[ -e "$SHUTDOWN_FLAG" ] && exit 0
+case "$(cat "$SG_MODE" 2>/dev/null | tr -d '[:space:]')" in
+    hold|charge_full|discharge|calibration) exit 0 ;;
+esac
+
 guarded() {
-    guard_session_active && { log "L18: skipping mutation (active session)"; return 1; }
+    # The caller already holds guard_lock; do not invoke the stale reaper.
+    case "$(cat "$SG_MODE" 2>/dev/null | tr -d '[:space:]')" in
+        charge_full|discharge|hold|calibration)
+            log "L18: skipping mutation (active session)"
+            return 1
+            ;;
+    esac
     return 0
 }
 
@@ -94,7 +109,7 @@ fi
 
 # Layer 18: skip if charge_full or discharge is active
 ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null || echo "idle")
-if [ "$ACTIVE_MODE" = "charge_full" ] || [ "$ACTIVE_MODE" = "discharge" ] || [ "$ACTIVE_MODE" = "calibration" ]; then
+if [ "$ACTIVE_MODE" = "charge_full" ] || [ "$ACTIVE_MODE" = "discharge" ] || [ "$ACTIVE_MODE" = "calibration" ] || [ "$ACTIVE_MODE" = "hold" ]; then
     log "L18: skipping LAYER2 (active_mode=$ACTIVE_MODE)"
     # Skip overshoot logic
 else
@@ -106,31 +121,40 @@ if [ -f "$SESSION_FILE" ]; then
 else
 # Only trigger if on AC (discharge to upper makes sense with charger)
 AC_NOW=$(pmset -g batt 2>/dev/null | grep -q "AC Power" && echo "yes" || echo "no")
-if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ]; then
+if [ "$AC_NOW" = "yes" ] && {
+    { [ "$SAILING" = "true" ] && [ "$PCT" -ge "$OVERSHOOT" ]; } ||
+    { [ "$SAILING" != "true" ] && [ "$PCT" -gt "$OVERSHOOT" ]; }
+}; then
     # Check if discharge already running
     if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
         log "LAYER2: overshoot detected (PCT=$PCT > UPPER=$UPPER)"
         
-        # Create fresh session
-        SD_ID=$(guard_session_begin discharge)
+        # Sailing drains to LOWER, then restores the configured UPPER/LOWER.
+        TARGET="$UPPER"
+        [ "$SAILING" = "true" ] && TARGET="$LOWER"
+
+        # guard_lock is already held.
+        SD_ID=$(guard_token_write_locked discharge)
         [ -n "$SD_ID" ] || exit 0
-        echo "$SD_ID" > "$SESSION_FILE"
+        atomic_write "$SESSION_FILE" "$SD_ID" || {
+            guard_token_clear_locked
+            exit 1
+        }
         
         # Start watcher
         nohup "$HOME/.battopt-swiftbar/sd_watcher.sh" \
-            "$SD_ID" "$UPPER" "$LOWER" "$SESSION_FILE" "$LOG" "$BAT" \
+            "$SD_ID" "$TARGET" "$LOWER" "$SESSION_FILE" "$LOG" "$BAT" "$UPPER" \
             >/dev/null 2>&1 &
         disown
         
         # Start discharge
-        guarded || exit 0
-        nohup sudo -n "$BAT" discharge "$UPPER" >/dev/null 2>&1 &
+        nohup sudo -n "$BAT" discharge "$TARGET" >/dev/null 2>&1 &
         disown
         
         sleep 2
         
         if pgrep -f "battopt discharge" >/dev/null; then
-            log "LAYER2: discharge started ($PCT% → $UPPER%)"
+            log "LAYER2: discharge started ($PCT% → $TARGET%)"
         else
             # Layer 12 (enforce_watchdog) handles repeated failures — reduce log noise
 if [ -f "$HOME/.battopt-swiftbar/.enforce_state" ]; then
@@ -139,7 +163,11 @@ else
     log "LAYER2: discharge failed — applying limit only"
 fi
             sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
+            rm -f "$SESSION_FILE"
+            guard_token_clear_locked
         fi
+        # The session watcher owns completion; skip later correction layers.
+        exit 0
     fi
 fi
 fi  # matches new "if [ -f $SESSION_FILE ]" block

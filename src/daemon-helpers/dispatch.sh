@@ -224,8 +224,8 @@ _kill_transients() {
     sudo pkill -9 -f "battopt discharge" 2>/dev/null || true
     sudo pkill -9 -f "battopt calibrate" 2>/dev/null || true
     sudo pkill -9 -f "sd_watcher.sh"     2>/dev/null || true
-    sudo pkill -9 -f "charge_full"       2>/dev/null || true
-    sudo pkill -9 -f "charge_full: watcher" 2>/dev/null || true
+    # Charge-full watchers exit when their ownership token changes.
+    # Matching "charge_full" here also kills dispatch.sh charge_full itself.
     sudo -n "$BAT" charge stop    >/dev/null 2>&1 || true
     sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
     sudo -n "$BAT" calibrate stop >/dev/null 2>&1 || true
@@ -329,6 +329,17 @@ intent_apply() {
             L=$((CUR - 1))
             [ "$L" -lt 20 ] && L=20
             [ "$L" -ge "$U" ] && L=$((U - 1))
+            
+            LAST_UPPER="$U"
+            LAST_LOWER="$L"
+            SAILING=false
+            SAIL_GAP=1
+            save_cfg || {
+                guard_unlock
+                notify "BattOpt" "Hold failed (cannot save config)"
+                return 1
+            }
+            rm -f "$D/.pre_charge_full_config"
             echo "hold" > "$D/.active_mode"
             guard_token_write_locked hold >/dev/null || { guard_unlock; return 1; }
             run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
@@ -338,13 +349,14 @@ intent_apply() {
                 run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
                 V=$(_verify_smc_upper)
             fi
-            guard_token_clear_locked
-            echo "idle" > "$D/.active_mode"
-            guard_unlock
             if [ "$V" = "$U" ]; then
+                # Keep hold ownership until an explicit replacement intent.
+                guard_unlock
                 notify "BattOpt" "Holding at ${V}%"
                 return 0
             fi
+            guard_token_clear_locked
+            guard_unlock
             log "intent_apply: hold_current failed (SMC=$V want=$U)"
             notify "BattOpt" "Hold failed (SMC=$V)"
             return 1
@@ -458,15 +470,20 @@ intent_apply() {
                 P=0
                 for i in $(seq 1 720); do
                     sleep 10
+                    guard_token_matches "$T" || exit 0
                     P=$(sudo -n "$B" status 2>/dev/null | grep -oE "Capacity [0-9]+" | grep -oE "[0-9]+" | head -1)
                     [ -n "$P" ] && [ "$P" -ge 99 ] && break
                 done
                 # ALWAYS restore pre-charge_full config (success OR timeout)
                 if [ -f "$D/.pre_charge_full_config" ]; then
-                    cat "$D/.pre_charge_full_config" > "$D/config"
+                    cat "$D/.pre_charge_full_config" > "$D/config.tmp.$$" && mv "$D/config.tmp.$$" "$D/config"
                     rm -f "$D/.pre_charge_full_config"
                     echo "[$(date +%H:%M:%S)] charge_full watcher: config restored" >> "$L"
                 fi
+                guard_lock || exit 1
+                trap "guard_unlock" EXIT
+                guard_token_matches "$T" || exit 0
+                [ "$(cat "$SG_MODE" 2>/dev/null)" = "charge_full" ] || exit 0
                 if [ -n "$P" ] && [ "$P" -ge 99 ] && guard_token_matches "$T" 2>/dev/null; then
                     sudo -n "$B" charge stop >/dev/null 2>&1
                     sudo -n "$B" limit 99 98 >/dev/null 2>&1
@@ -474,7 +491,7 @@ intent_apply() {
                 else
                     sudo -n "$B" charge stop >/dev/null 2>&1
                 fi
-                guard_session_end "$T" 2>/dev/null
+                guard_token_clear_locked
                 echo "[$(date +%H:%M:%S)] charge_full: watcher finished" >> "$L"
             ' _ "$BAT" "$D" "$LOG" "$TOKEN" >/dev/null 2>&1 &
             disown
@@ -762,39 +779,27 @@ CFGEOF
     kill_calibrate) kill_calibrate ;;
 
     stop_now)
-        acquire; ensure_clean
-        sudo pkill -9 -f "battopt charge " 2>/dev/null || true
-        sudo pkill -9 -f "battopt charge_full" 2>/dev/null || true
-        sudo pkill -9 -f "charge_full" 2>/dev/null || true
-        if [ -f "$HOME/.battopt-swiftbar/.pre_charge_full_config" ]; then
-            cp "$HOME/.battopt-swiftbar/.pre_charge_full_config" "$HOME/.battopt-swiftbar/config"
-            source "$HOME/.battopt-swiftbar/config"
-            rm -f "$HOME/.battopt-swiftbar/.pre_charge_full_config"
-            log "stop_now: pre-charge_full config restored"
-        fi
-        release
+        # intent_apply serializes cancellation, config writes and the new hold.
         intent_apply hold_current ;;
 
     remove_limit_hold)
-        acquire; ensure_clean
-        release
         intent_apply hold_current ;;
 
     disable_limit)
-        acquire; ensure_clean
+        acquire
         log "disable all"
         release
         intent_apply disable_limit ;;
 
     charge_full)
-        acquire; ensure_clean
+        acquire
         log "charge_full: START"
         release
         intent_apply charge_full ;;
 
 
     smart_discharge)
-        acquire; ensure_clean
+        acquire
         CUR=$(get_pct); [ -z "$CUR" ] && { release; exit 1; }
 
         LAST_TARGET=$(get_last_input SD_TARGET 75)
@@ -904,7 +909,7 @@ AS
         intent_apply smart_discharge "$T" "$LOW" "$MODE" "$G" ;;
 
     limit_custom)
-        acquire; ensure_clean
+        acquire
         CUR=$(get_pct)
         DEF=$(get_last_input LIMIT_CUSTOM "")
         [ -z "$DEF" ] && DEF="${LAST_UPPER}/${LAST_LOWER}"
@@ -997,18 +1002,16 @@ AS
             SAILING=true; SAIL_GAP="$GAP"
             LAST_LOWER=$((U - GAP)); [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
         fi
-        LAST_UPPER="$U"
-        save_cfg
         release
         intent_apply limit "$U" "$LAST_LOWER" "$MODE" "$GAP" ;;
 
     sail_on)
-        acquire; ensure_clean
+        acquire
         release
         intent_apply sail_on ;;
 
     sail_off)
-        acquire; ensure_clean
+        acquire
         release
         intent_apply sail_off ;;
 
@@ -1032,7 +1035,7 @@ AS
         intent_apply sail_gap "$G" ;;
 
     calibrate)
-        acquire; ensure_clean
+        acquire
         log "calibrate"
         release
         intent_apply calibration_start ;;
