@@ -17,6 +17,13 @@ if [ -e "$SHUTDOWN_FLAG" ]; then
     exit 0
 fi
 
+# Minimal atomic_write (Bash 3.2)
+atomic_write() {
+    local file="$1" content="$2"
+    local tmp="${file}.tmp.$$"
+    printf '%s' "$content" > "$tmp" && mv "$tmp" "$file"
+}
+
 log() {
     echo "[$(date '+%H:%M:%S')] guardian: $1" >> "$LOG"
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$GUARD_LOG"
@@ -69,7 +76,7 @@ SMC_LOWER=$(echo "$STATUS" | grep -oE 'lower limit [0-9]+' | grep -oE '[0-9]+' |
 # ═══════════════════════════════════════════════════════
 if [ -f "$SESSION_FILE" ]; then
     AGE=$(( $(date +%s) - $(stat -f %m "$SESSION_FILE" 2>/dev/null || echo 0) ))
-    # Session older than 2 hours → stale
+    # Session older than 2 hours — stale
     if [ "$AGE" -gt 7200 ]; then
         TOKEN=$(guard_token)
         [ -z "$TOKEN" ] || exit 0
@@ -92,6 +99,11 @@ if [ "$ACTIVE_MODE" = "charge_full" ] || [ "$ACTIVE_MODE" = "discharge" ] || [ "
     # Skip overshoot logic
 else
 OVERSHOOT=$UPPER
+# Guard: do not create a second session if dispatch.sh already started one.
+# SESSION_FILE existence means an sd_watcher is already running.
+if [ -f "$SESSION_FILE" ]; then
+    log "LAYER2: existing session present — skipping"
+else
 # Only trigger if on AC (discharge to upper makes sense with charger)
 AC_NOW=$(pmset -g batt 2>/dev/null | grep -q "AC Power" && echo "yes" || echo "no")
 if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ]; then
@@ -130,6 +142,8 @@ fi
         fi
     fi
 fi
+fi  # matches new "if [ -f $SESSION_FILE ]" block
+fi  # LAYER 2
 
 # ═══════════════════════════════════════════════════════
 
@@ -148,8 +162,6 @@ if pgrep -f "battopt discharge" >/dev/null 2>&1; then
     fi
 fi
 # === END STOP DISCHARGE ===
-
-fi
 
 # LAYER 2c: charging overshoot — catches ac_watcher miss
 ISCHG=$(echo "$IOREG" 2>/dev/null | grep -oE '"IsCharging" = [A-Za-z]+' | awk '{print $3}')
@@ -194,7 +206,11 @@ elif [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
             if [ "$AGE" -gt 300 ]; then
                 log "LAYER3: hold ${AGE}s drift SMC=$SMC_UPPER config=$UPPER — force reapply"
                 sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
-                date +%s > "$HOLD_SINCE"
+                # Only reset the hold timer if the reapply succeeded.
+                # Do NOT unconditionally reset the timer every guardian run,
+                # otherwise sustained drift is never detected.
+                V=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+                [ "$V" = "$UPPER" ] && date +%s > "$HOLD_SINCE"
             else
                 log "LAYER3: hold ${AGE}s — defer"
             fi
@@ -225,7 +241,7 @@ if [ ! -f "$SESSION_FILE" ]; then
                 log "LAYER4: orphan discharge ${SEC}s old — stopping"
                 sudo pkill -9 -f "battopt discharge" 2>/dev/null
                 sudo -n "$BAT" discharge stop >/dev/null 2>&1
-                [ -z "$(cat "$HOME/.battopt-swiftbar/.active_token" 2>/dev/null)" ] && echo idle > "$HOME/.battopt-swiftbar/.active_mode"
+                [ -z "$(cat "$HOME/.battopt-swiftbar/.active_token" 2>/dev/null)" ] && atomic_write "$HOME/.battopt-swiftbar/.active_mode" "idle"
             fi
         fi
     elif pgrep -f "battopt discharge" >/dev/null 2>&1; then

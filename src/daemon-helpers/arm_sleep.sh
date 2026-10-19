@@ -13,6 +13,14 @@ if ! command -v notify >/dev/null 2>&1; then
         fi
     }
 fi
+
+# Minimal atomic_write (Bash 3.2)
+atomic_write() {
+    local file="$1" content="$2"
+    local tmp="${file}.tmp.$$"
+    printf '%s' "$content" > "$tmp" && mv "$tmp" "$file"
+}
+
 # Arm Sleep — one-button preparation for sleep
 # Kills audio apps, runs cleanup, arms PowerWatch
 
@@ -71,13 +79,17 @@ case "$ACTIVE_MODE" in
         log "Applied sleep delay profile: $APPLY_PROFILE"
         ;;
     *)
-        # Idle — apply HOLD_ON_SLEEP normally
-
+        # Idle — apply HOLD_ON_SLEEP normally.
+        # Keep lock while writing .active_mode so no concurrent writer races.
         # === TASK 3A FIX: Stop charge before limit change ===
         # Kill any pending charge processes to prevent SMC release race
         sudo pkill -9 -f "battopt charge " 2>/dev/null || true
         sudo -n /usr/local/bin/battopt charge stop >/dev/null 2>&1 || true
         sleep 1
+
+        # Write .active_mode while still holding the lock
+        atomic_write "$HOME/.battopt-swiftbar/.active_mode" "idle"
+        guard_unlock
 
         # CHARGE_MODE governs sleep-time charging behavior (replaces HOLD_ON_SLEEP-only logic)
         source "$HOME/.battopt-swiftbar/config" 2>/dev/null || true
