@@ -33,7 +33,7 @@ fi
 echo $$ > "$LOCK_FILE"
 trap "rm -f '$LOCK_FILE'" EXIT
 
-log "=== LAUNCH START ==="
+log "hey, let's go!"
 START=$(date +%s)
 
 # 1. Explicit launch: clear user_shutdown + soft flags
@@ -107,5 +107,5 @@ if [ -x "$NOTIFIER" ] && [ -f "$ICON" ]; then
 fi
 
 END=$(date +%s)
-log "=== LAUNCH COMPLETE in $((END-START))s ==="
+log "all done in $((END-START))s"
 exit 0
