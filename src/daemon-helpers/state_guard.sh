@@ -116,3 +116,40 @@ guard_session_active() {
         *) return 1 ;;
     esac
 }
+
+# --- Legacy Compatibility ---
+atomic_write() {
+    local file="$1" content="$2"
+    local tmp="${file}.tmp.$$"
+    printf '%s' "$content" > "$tmp" && mv "$tmp" "$file"
+}
+guard_new_token() { printf '%s_%s_%s' "$$" "$(date +%s)" "$1"; }
+guard_token() { cat "$SG_TOKEN" 2>/dev/null; }
+guard_token_matches() { [ -n "$1" ] && [ "$(guard_token)" = "$1" ]; }
+guard_token_write_locked() {
+    local mode="$1" token
+    token=$(guard_new_token "$mode")
+    printf '%s\n' "$token" > "$SG_TOKEN"
+    printf '%s\n' "$mode" > "$SG_MODE"
+    printf '%s\n' "$token"
+}
+guard_token_clear_locked() {
+    rm -f "$SG_TOKEN"
+    printf 'idle\n' > "$SG_MODE"
+}
+guard_session_begin() {
+    guard_lock || return 1
+    local token=$(guard_token_write_locked "$1")
+    guard_unlock
+    echo "$token"
+}
+guard_session_end() {
+    guard_lock || return 1
+    if guard_token_matches "$1"; then
+        guard_token_clear_locked
+        guard_unlock
+        return 0
+    fi
+    guard_unlock
+    return 1
+}

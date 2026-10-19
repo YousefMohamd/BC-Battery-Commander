@@ -248,165 +248,246 @@ _verify_smc_upper() {
 
 intent_apply() {
     local kind="$1"; shift
-    local U L T CUR V MODE GAP TOKEN
-    local D="$HOME/.battopt-swiftbar"
-
-    guard_lock || { log "intent_apply: lock failed ($kind)"; return 1; }
-
-    _kill_transients
-    sleep 1
-    _clear_session_locked || {
-        log "intent_apply: clear session failed ($kind)"
-        guard_unlock
-        return 1
-    }
-
     case "$kind" in
-        limit)
-            U="$1"; L="$2"; MODE="$3"; GAP="$4"
-            CUR=$(get_pct)
-            # Respect caller-provided MODE; fallback for backward compat
-            if [ "$MODE" = "Hold" ]; then
-                SAILING=false
-                SAIL_GAP=1
-            elif [ "$MODE" = "Sail" ] || [ "$MODE" = "Sailing" ]; then
-                SAILING=true
-                [ -n "$GAP" ] && SAIL_GAP="$GAP"
-                validate_int "$SAIL_GAP" 5 30 2>/dev/null || SAIL_GAP=10
-            else
-                # backward compat: no MODE passed → keep legacy behavior
-                SAILING=true
-                SAIL_GAP=$((U - L))
-                [ "$SAIL_GAP" -lt 1 ] && SAIL_GAP=1
-            fi
-            LAST_UPPER="$U"
-            LAST_LOWER="$L"
-            save_cfg
-            # Discharge path if battery above target
-            if [ -n "$CUR" ] && [ "$CUR" -gt "$U" ]; then
-                echo "discharge" > "$D/.active_mode"
-                TOKEN=$(guard_token_write_locked discharge) || { guard_unlock; return 1; }
-                printf '%s\n' "$TOKEN" > "$D/.sd_session"
-                nohup "$D/sd_watcher.sh" "$TOKEN" "$U" "$L" "$D/.sd_session" "$LOG" "$BAT" >/dev/null 2>&1 &
-                disown
-                nohup sudo -n "$BAT" discharge "$U" >/dev/null 2>&1 &
-                disown
-                guard_unlock
-                notify "BattOpt" "Discharging ${CUR}% → ${U}%"
-                return 0
-            fi
-            # Hold/charge path
-            echo "hold" > "$D/.active_mode"
-            guard_token_write_locked hold >/dev/null || { guard_unlock; return 1; }
-            run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
-            V=$(_verify_smc_upper)
-            if [ "$V" != "$U" ]; then
-                log "intent_apply: limit retry (SMC=$V want=$U)"
-                sleep 2
-                run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
-                V=$(_verify_smc_upper)
-            fi
-            guard_token_clear_locked
-            echo "idle" > "$D/.active_mode"
-            guard_unlock
-            if [ "$V" = "$U" ]; then
-                notify "BattOpt" "Limit set ${V}% / ${L}%"
-                return 0
-            fi
-            log "intent_apply: limit failed (SMC=$V want=$U)"
-            notify "BattOpt" "Limit failed (SMC=$V)"
-            return 1
-            ;;
+        limit) submit_request "user" "set_limit" "$1" "$2" "$3" "$4" "-" "0" ;;
+        hold_current) submit_request "user" "hold_current" "-" "-" "-" "-" "-" "0" ;;
+        disable_limit) submit_request "user" "disable_limit" "-" "-" "-" "-" "-" "0" ;;
+        charge_full) submit_request "user" "charge_full" "-" "-" "-" "-" "-" "0" ;;
+        smart_discharge) submit_request "user" "smart_discharge" "$1" "$2" "$3" "$4" "-" "0" ;;
+        calibration_start) submit_request "user" "calibration_start" "-" "-" "-" "-" "-" "0" ;;
+        calibration_stop) submit_request "user" "calibration_stop" "-" "-" "-" "-" "-" "0" ;;
+        *) log "Unknown intent: $kind" ;;
+    esac
+    notify "BattOpt" "Queued: $kind"
+    return 0
+}
 
-        hold_current)
-            CUR=$(get_pct)
-            [ -n "$CUR" ] || {
-                guard_unlock
-                notify "BattOpt" "Hold failed (no battery reading)"
-                return 1
-            }
-            U="$CUR"
-            L=$((CUR - 1))
-            [ "$L" -lt 20 ] && L=20
-            [ "$L" -ge "$U" ] && L=$((U - 1))
-            
-            LAST_UPPER="$U"
-            LAST_LOWER="$L"
-            SAILING=false
-            SAIL_GAP=1
-            save_cfg || {
-                guard_unlock
-                notify "BattOpt" "Hold failed (cannot save config)"
-                return 1
-            }
-            rm -f "$D/.pre_charge_full_config"
-            echo "hold" > "$D/.active_mode"
-            guard_token_write_locked hold >/dev/null || { guard_unlock; return 1; }
-            run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
-            V=$(_verify_smc_upper)
-            if [ "$V" != "$U" ]; then
-                sleep 2
-                run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
-                V=$(_verify_smc_upper)
-            fi
-            if [ "$V" = "$U" ]; then
-                # Keep hold ownership until an explicit replacement intent.
-                guard_unlock
-                notify "BattOpt" "Holding at ${V}%"
-                return 0
-            fi
-            guard_token_clear_locked
-            guard_unlock
-            log "intent_apply: hold_current failed (SMC=$V want=$U)"
-            notify "BattOpt" "Hold failed (SMC=$V)"
-            return 1
-            ;;
+# === END INTENT APPLY ===
 
-        sail_on|sail_off|sail_gap)
-            case "$kind" in
-                sail_on)
-                    SAILING=true
-                    [ "$LAST_LOWER" -ge "$LAST_UPPER" ] && LAST_LOWER=$((LAST_UPPER - 5))
-                    [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
-                    ;;
-                sail_off)
-                    SAILING=false
-                    ;;
-                sail_gap)
-                    GAP="$1"
-                    SAIL_GAP="$GAP"
-                    if [ "$SAILING" = "true" ]; then
-                        LAST_LOWER=$((LAST_UPPER - GAP))
-                        [ "$LAST_LOWER" -lt 20 ] && LAST_LOWER=20
-                    fi
-                    ;;
-            esac
-            save_cfg
-            echo "hold" > "$D/.active_mode"
-            guard_token_write_locked hold >/dev/null || { guard_unlock; return 1; }
-            run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
-            V=$(_verify_smc_upper)
-            if [ "$V" != "$LAST_UPPER" ]; then
-                sleep 2
-                run_with_retry limit "$LAST_UPPER" "$LAST_LOWER" >> "$LOG" 2>&1
-                V=$(_verify_smc_upper)
-            fi
-            guard_token_clear_locked
-            echo "idle" > "$D/.active_mode"
-            guard_unlock
-            if [ "$V" = "$LAST_UPPER" ]; then
-                notify "BattOpt" "$kind applied (SMC=$V)"
-                return 0
-            fi
-            log "intent_apply: $kind failed (SMC=$V want=$LAST_UPPER)"
-            notify "BattOpt" "$kind failed (SMC=$V)"
-            return 1
-            ;;
+# Fire refresh on exit (normal + error paths)
+trap refresh_swiftbar EXIT
 
-        disable_limit)
-        submit_request "user" "disable_limit" "-" "-" "-" "-" "-" "0"
-        notify "BattOpt" "Queued: Disable limits"
+case "$1" in
+    force_reset) "$FORCE" ;;
+    
+    sleep_mode_default)
+        acquire
+        rm -f "$HOME/.battopt-swiftbar/.sleep_override_ac"
+        rm -f "$HOME/.battopt-swiftbar/.sleep_override_lid"
+        rm -f "$HOME/.battopt-swiftbar/.sleep_override_batt"
+        sudo -n /usr/bin/pmset -a disablesleep 0
+        # Battery defaults
+        ~/.battopt-swiftbar/power_saver.sh enforce-sleep-policy
+        # AC defaults — restore normal sleep timing
+        sudo -n /usr/bin/pmset -c sleep 120
+        sudo -n /usr/bin/pmset -c displaysleep 20
+        sudo -n /usr/bin/pmset -c disksleep 0
+        sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null
+        atomic_write "$HOME/.battopt-swiftbar/.sleep_mode" "default"
+        log "sleep_mode: default"
+        notify "BattOpt" "Sleep Mode: Default"
+        release
         ;;
+
+    sleep_mode_presentation)
+        acquire
+        # Requires AC
+        if ! pmset -g batt 2>/dev/null | grep -q "AC Power"; then
+            osascript -e 'display dialog "⚠️  AC required
+
+Presentation Mode only works with the charger connected." buttons {"OK"} with title "Sleep Mode" with icon caution' 2>/dev/null
+            release
+            exit 0
+        fi
+        rm -f "$HOME/.battopt-swiftbar/.sleep_override_lid" "$HOME/.battopt-swiftbar/.sleep_override_batt"
+        touch "$HOME/.battopt-swiftbar/.sleep_override_ac"
+        sudo -n /usr/bin/pmset -c sleep 0
+        sudo -n /usr/bin/pmset -c displaysleep 0
+        sudo -n /usr/bin/pmset -c disksleep 0
+        sudo -n /usr/bin/pmset -a disablesleep 0
+        sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null
+        atomic_write "$HOME/.battopt-swiftbar/.sleep_mode" "presentation"
+        log "sleep_mode: presentation"
+        notify "BattOpt" "Sleep Mode: Presentation"
+        release
+        ;;
+
+    sleep_mode_download)
+        acquire
+        if ! pmset -g batt 2>/dev/null | grep -q "AC Power"; then
+            osascript -e 'display dialog "⚠️  AC required
+
+Long Tasks mode only works with the charger connected." buttons {"OK"} with title "Sleep Mode" with icon caution' 2>/dev/null
+            release
+            exit 0
+        fi
+        BUTTON=$(osascript << 'AS'
+try
+    display dialog "⚠️  Enable Long Tasks Mode?
+
+Keeps Mac fully awake with lid closed.
+
+Risks:
+• Heat buildup — place on hard surface only
+• Never put in bag or cushion
+• Auto-disables when unplugged
+
+Best for: large downloads, long exports, backups." buttons {"Cancel", "Enable"} default button "Cancel" with title "Sleep Mode" with icon caution
+    return button returned of result
+on error
+    return "__CANCELLED__"
+end try
+AS
+)
+        [ "$BUTTON" != "Enable" ] && { release; exit 0; }
+        
+        # Ensure sleep disable is off before starting
+        sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null
+        sleep 1
+        
+        # Enable sleep disable (lid-closed awake)
+        sudo -n /usr/bin/pmset -a disablesleep 1 >/dev/null 2>&1
+        
+        # Verify it started
+        sleep 1
+        if [ "$(pmset -g | awk '/SleepDisabled/{print $2}')" != "1" ]; then
+            notify "BattOpt" "Long Tasks: FAILED to start"
+            release
+            exit 1
+        fi
+        
+        atomic_write "$HOME/.battopt-swiftbar/.sleep_mode" "download"
+        log "sleep_mode: download (disablesleep=1)"
+        notify "BattOpt" "Long Tasks: ON — disable when done"
+        release
+        ;;
+
+    sleep_mode_normal_from_download)
+        acquire
+        sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null
+        atomic_write "$HOME/.battopt-swiftbar/.sleep_mode" "default"
+        log "sleep_mode: disablesleep=0"
+        notify "BattOpt" "Long Tasks: OFF"
+        release
+        ;;
+
+    sleep_mode_travel)
+        acquire
+        BUTTON=$(osascript << 'AS'
+try
+    display dialog "⚠️  Enable Travel Mode?
+
+Battery hibernates after 4h instead of 30min.
+
+Impact:
+• Drains battery ~3% more overnight
+• Keeps session state alive longer
+• Only affects battery (AC unchanged)
+
+Best for: short trips, keeping state alive." buttons {"Cancel", "Enable"} default button "Cancel" with title "Sleep Mode" with icon caution
+    return button returned of result
+on error
+    return "__CANCELLED__"
+end try
+AS
+)
+        [ "$BUTTON" != "Enable" ] && { release; exit 0; }
+        
+        rm -f "$HOME/.battopt-swiftbar/.sleep_override_ac" "$HOME/.battopt-swiftbar/.sleep_override_lid"
+        touch "$HOME/.battopt-swiftbar/.sleep_override_batt"
+        ~/.battopt-swiftbar/power_saver.sh apply-delays travel
+        sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null
+        atomic_write "$HOME/.battopt-swiftbar/.sleep_mode" "travel"
+        log "sleep_mode: travel"
+        notify "BattOpt" "Sleep Mode: Travel"
+        release
+        ;;
+    
+
+    reapply_limit)
+        # Manually reapply the saved limit (called after daemon restart)
+        source "$HOME/.battopt-swiftbar/config"
+        UPPER="${LAST_UPPER:-85}"
+        LOWER="${LAST_LOWER:-80}"
+        sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
+        sleep 1
+        log "reapply_limit: $UPPER/$LOWER"
+        notify "BattOpt" "Limit re-applied: $UPPER/$LOWER"
+        ;;
+    
+    reset_defaults)
+        acquire
+        BUTTON=$(osascript << 'AS'
+try
+    set d to display dialog "Reset all BattOpt settings to defaults?
+
+This will:
+  • Charge limits: 85% / 80%
+  • Sailing Mode: ON (gap 5)
+  • Power Mode: Balanced (18/10/15)
+  • Clear saved dialog inputs (.last_inputs)
+  • Kill any running discharge/calibration
+
+This action cannot be undone." buttons {"Cancel", "Reset"} default button "Cancel" with title "BattOpt - Reset to Defaults" with icon caution
+    return button returned of d
+on error
+    return "__CANCELLED__"
+end try
+AS
+)
+        [ "$BUTTON" = "__CANCELLED__" ] && { release; exit 0; }
+        
+        if [ "$BUTTON" = "Reset" ]; then
+            sd_session_invalidate
+            sudo -n pkill -9 -f "sd_watcher" 2>/dev/null || true
+            # 1) Kill running operations
+            kill_discharge 2>/dev/null
+            kill_charge 2>/dev/null
+            kill_calibrate 2>/dev/null
+            
+            # 2) Reset config file
+            cat > "$HOME/.battopt-swiftbar/config" << 'CFGEOF'
+LAST_UPPER=85
+LAST_LOWER=80
+SAILING=true
+SAIL_GAP=5
+CFGEOF
+            
+            # 3) Apply limit to SMC
+            sudo -n "$BAT" limit 85 80 >> "$LOG" 2>&1
+            
+            # 4) Reset Power Mode to Balanced
+            ~/.battopt-swiftbar/power_mode.sh balanced >> "$LOG" 2>&1
+
+            # 5) Clear saved input history (reset dialogs to defaults)
+            rm -f "$HOME/.battopt-swiftbar/.last_inputs" 2>/dev/null
+            
+            # 6) Remove stale state files
+            rm -f "$HOME/.battopt-swiftbar/.sd_watch" 2>/dev/null
+            rm -f "$HOME/.battopt-swiftbar/.daemon_fail_count" 2>/dev/null
+            
+            log "reset_defaults: 85/80, Sailing ON, Power Mode Balanced"
+            notify "BattOpt" "Reset to Defaults — done"
+        fi
+        release
+        echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
+        ;;
+    kill_charge)    kill_charge ;;
+    kill_discharge) kill_discharge ;;
+    kill_calibrate) kill_calibrate ;;
+
+    stop_now)
+        # intent_apply serializes cancellation, config writes and the new hold.
+        intent_apply hold_current ;;
+
+    remove_limit_hold)
+        intent_apply hold_current ;;
+
+    disable_limit)
+        acquire
+        log "disable all"
+        release
+        intent_apply disable_limit ;;
 
     charge_full)
         acquire
