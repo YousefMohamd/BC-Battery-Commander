@@ -6,15 +6,18 @@ SG_TOKEN="$SG_DIR/.active_token"
 SG_MODE="$SG_DIR/.active_mode"
 
 guard_lock() {
-    local owner tries=0
+    local owner age tries=0
     while ! mkdir "$SG_LOCK" 2>/dev/null; do
         owner=$(cat "$SG_LOCK/pid" 2>/dev/null)
         if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
             rm -rf "$SG_LOCK"
             continue
         fi
-        AGE=$(( $(date +%s) - $(stat -f %m "$SG_LOCK" 2>/dev/null || echo 0) ))
-        [ "$AGE" -gt 30 ] && { rm -rf "$SG_LOCK"; continue; }
+        # Never expire a lock held by a live process.
+        if [ -z "$owner" ]; then
+            age=$(( $(date +%s) - $(stat -f %m "$SG_LOCK" 2>/dev/null || echo 0) ))
+            [ "$age" -gt 30 ] && { rm -rf "$SG_LOCK"; continue; }
+        fi
         tries=$((tries + 1))
         [ "$tries" -ge 30 ] && return 1
         sleep 0.1
@@ -30,13 +33,21 @@ guard_unlock() {
 guard_reap_stale() {
     local mode token age
     mode=$(cat "$SG_MODE" 2>/dev/null | tr -d '[:space:]')
+    # Persistent holds have no worker process and must not expire.
+    [ "$mode" = "hold" ] && return 1
     token=$(cat "$SG_TOKEN" 2>/dev/null); [ -z "$token" ] && return 1
     if ! pgrep -f "battopt (discharge|charge|calibrate)" >/dev/null 2>&1 && ! pgrep -f "sd_watcher.sh" >/dev/null 2>&1; then
         age=$(( $(date +%s) - $(stat -f %m "$SG_TOKEN" 2>/dev/null || echo 0) ))
         [ "$age" -gt 600 ] || return 1
         guard_lock || return 1
-        if ! pgrep -f "battopt (discharge|charge|calibrate)" >/dev/null 2>&1; then
+        if guard_token_matches "$token" \
+            && [ "$(cat "$SG_MODE" 2>/dev/null | tr -d '[:space:]')" = "$mode" ] \
+            && ! pgrep -f "battopt (discharge|charge|calibrate)" >/dev/null 2>&1 \
+            && ! pgrep -f "sd_watcher.sh" >/dev/null 2>&1; then
             guard_token_clear_locked
+            if [ "$(cat "$SG_DIR/.sd_session" 2>/dev/null)" = "$token" ]; then
+                rm -f "$SG_DIR/.sd_session"
+            fi
             echo "[$(date +%H:%M:%S)] reaped stale $mode $token age $age" >> "$HOME/.battopt-swiftbar/actions.log" 2>&1
         fi
         guard_unlock; return 0

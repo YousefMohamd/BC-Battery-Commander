@@ -25,6 +25,12 @@ IOREG=$(ioreg -rn AppleSmartBattery 2>/dev/null)
 EXT=$(echo "$IOREG" | grep -oE '"ExternalConnected" = [A-Za-z]+' | awk '{print $3}')
 [ -z "$EXT" ] && exit 0
 
+# Keep the existing hold exclusion atomic with the limit application.
+guard_lock || exit 0
+trap 'guard_unlock' EXIT
+trap 'exit 0' TERM INT
+[ -e "$DASH/.user_shutdown" ] && exit 0
+
 # Read previous state
 PREV=""
 [ -f "$STATE_FILE" ] && PREV=$(cat "$STATE_FILE" 2>/dev/null | tr -d '[:space:]')

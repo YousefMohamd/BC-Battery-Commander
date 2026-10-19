@@ -1,11 +1,12 @@
 #!/bin/bash
-# Args: SD_ID TARGET LOW SESSION_FILE LOG BAT
+# Args: SD_ID TARGET LOW SESSION_FILE LOG BAT [RESTORE_UPPER]
 SD_ID="$1"
 T="$2"
 LOW="$3"
 SESSION_FILE="$4"
 LOG="$5"
 BAT="$6"
+RESTORE_UPPER="${7:-$T}"
 DASH="$HOME/.battopt-swiftbar"
 STATE_GUARD="$DASH/state_guard.sh"
 source "$STATE_GUARD" 2>/dev/null || exit 1
@@ -27,44 +28,54 @@ finish_discharge() {
     # Recheck ownership immediately before changing shared state.
     [ "$(cat "$SESSION_FILE" 2>/dev/null)" = "$SD_ID" ] || return 0
 
-    if [ -f "$STATE_GUARD" ]; then
-        source "$STATE_GUARD" || return 0
-        guard_lock || return 0
-    fi
+    guard_lock || return 1
 
     # Recheck after acquiring the lock because another writer may have won it.
     [ "$(cat "$SESSION_FILE" 2>/dev/null)" = "$SD_ID" ] || {
-        [ -f "$STATE_GUARD" ] && guard_unlock
+        guard_unlock
         return 0
     }
     [ "$(cat "$DASH/.active_mode" 2>/dev/null)" = "discharge" ] || {
-        [ -f "$STATE_GUARD" ] && guard_unlock
+        guard_unlock
+        return 0
+    }
+    guard_token_matches "$SD_ID" || {
+        guard_unlock
         return 0
     }
 
-    if ! sudo -n "$BAT" limit "$T" "$LOW" >> "$LOG" 2>&1; then
-        echo "[$(date +%H:%M:%S)] sd_watcher: limit $T/$LOW failed" >> "$LOG"
+    # Stop first so the discharge worker cannot overwrite the restored limit.
+    if ! sudo -n "$BAT" discharge stop >> "$LOG" 2>&1; then
+        echo "[$(date +%H:%M:%S)] sd_watcher: discharge stop failed" >> "$LOG"
+        guard_unlock
+        return 1
+    fi
+    sudo -n pkill -9 -f '/usr/local/bin/battopt discharge ' 2>/dev/null || true
+    if ! sudo -n "$BAT" limit "$RESTORE_UPPER" "$LOW" >> "$LOG" 2>&1; then
+        echo "[$(date +%H:%M:%S)] sd_watcher: limit $RESTORE_UPPER/$LOW failed" >> "$LOG"
+        guard_unlock
+        return 1
     fi
     echo "[$(date +%H:%M:%S)] sd_watcher: $message" >> "$LOG"
-    sudo -n "$BAT" discharge stop >/dev/null 2>&1 || echo "[$(date +%H:%M:%S)] sd_watcher: discharge stop failed" >> "$LOG"
-    sudo pkill -9 -f '/usr/local/bin/battopt discharge ' 2>/dev/null || true
-    # We already hold guard_lock and verified SD_ID = SESSION_FILE, so it is
-    # safe to write idle directly.
-    rm -f "$SESSION_FILE" "$DASH/.active_token"
-    echo "idle" > "$DASH/.active_mode"
+    # Clear only this session, using the shared atomic mode write.
+    guard_token_clear_locked
+    local result=$?
+    [ "$result" -eq 0 ] && rm -f "$SESSION_FILE"
 
-    [ -f "$STATE_GUARD" ] && guard_unlock
+    guard_unlock
+    return "$result"
 }
 
 for i in $(seq 1 720); do
     sleep 10
     CURRENT=$(cat "$SESSION_FILE" 2>/dev/null || echo "none")
     if [ "$CURRENT" != "$SD_ID" ]; then
-        sudo -n "$BAT" discharge stop >/dev/null 2>&1 || true
+        # A replacement session owns the hardware. Never stop or clear it.
+        guard_session_end "$SD_ID" >/dev/null 2>&1 || true
         echo "[$(date +%H:%M:%S)] sd_watcher: session invalidated" >> "$LOG"
         exit 0
     fi
-    guard_token_matches "$SD_ID" 2>/dev/null || { sudo -n "$BAT" discharge stop >/dev/null 2>&1; exit 0; }
+    guard_token_matches "$SD_ID" 2>/dev/null || exit 0
     CUR=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
     MAX=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"MaxCapacity" = [0-9]+' | awk '{print $3}')
     if [ -n "$CUR" ] && [ -n "$MAX" ] && [ "$MAX" -gt 0 ]; then
@@ -73,8 +84,7 @@ for i in $(seq 1 720); do
         P=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'Capacity [0-9]+' | grep -oE '[0-9]+' | head -1)
     fi
     if [ -n "$P" ] && [ "$P" -le "$T" ]; then
-        finish_discharge "reached ${P}% — limit ${T}/${LOW}"
-        exit 0
+        finish_discharge "reached ${P}% — limit ${RESTORE_UPPER}/${LOW}" && exit 0
     fi
 done
 finish_discharge "timeout (2h) — killed"
