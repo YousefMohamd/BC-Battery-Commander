@@ -50,6 +50,9 @@ UPPER=85
 
 # Read active mode
 MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
+[ "$MODE" = "charge_full" ] && exit 0
+[ "$MODE" = "discharge" ] && exit 0
+[ "$MODE" = "calibration" ] && exit 0
 # BUG #72 FIX: charge_full is a charging session — overshoot during charge_full
 # is exactly when we SHOULD intervene. Only block discharge/calibration.
 case "$MODE" in

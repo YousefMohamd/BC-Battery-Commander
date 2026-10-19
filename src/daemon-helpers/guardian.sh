@@ -153,9 +153,10 @@ fi
 
 # LAYER 2c: charging overshoot — catches ac_watcher miss
 ISCHG=$(echo "$IOREG" 2>/dev/null | grep -oE '"IsCharging" = [A-Za-z]+' | awk '{print $3}')
-if [ "$ISCHG" = "Yes" ] && [ -n "$PCT" ] && [ "$PCT" -gt "$UPPER" ]; then
-    case "$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')" in
-        charge_full|discharge|calibration) : ;;
+AM_L2C=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
+if [ "$AM_L2C" != "charge_full" ] && [ "$ISCHG" = "Yes" ] && [ -n "$PCT" ] && [ "$PCT" -gt "$UPPER" ]; then
+    case "$AM_L2C" in
+        discharge|calibration) : ;;
         *)
             log "L2c: charging overshoot PCT=$PCT > UPPER=$UPPER — forcing limit"
             sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
@@ -174,10 +175,17 @@ else
     rm -f "$HOLD_SINCE"
 fi
 
-if [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
+AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
+[ -z "$AM_L3" ] && AM_L3=idle
+if [ "$AM_L3" = "charge_full" ]; then
+    log "LAYER3: charge_full active — deferring drift correction"
+elif [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
     case "$AM_L3" in
-        discharge|charge_full|calibration)
+        discharge|calibration)
             log "LAYER3: drift SMC=$SMC_UPPER config=$UPPER but active=$AM_L3 — skip"
+            ;;
+        charge_full)
+            log "LAYER3: charge_full active — ignoring drift"
             ;;
         hold)
             NOW=$(date +%s)

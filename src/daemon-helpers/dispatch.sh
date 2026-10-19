@@ -79,12 +79,11 @@ save_last_input() {
 # CHARGE_MODE default: follow|limit|hold
 
 save_cfg() {
-    cat > "$CFG" <<EOF
-LAST_UPPER=$LAST_UPPER
+    atomic_write "$CFG" "LAST_UPPER=$LAST_UPPER
 LAST_LOWER=$LAST_LOWER
 SAILING=$SAILING
 SAIL_GAP=$SAIL_GAP
-EOF
+"
 }
 
 kill_clients() { sudo pkill -9 -f "/usr/local/bin/battopt" 2>/dev/null; sleep 1; }
@@ -420,9 +419,9 @@ intent_apply() {
             ;;
 
         charge_full)
-            # FIX: update config BEFORE charge so charging_guard.sh sees 100/99 not old 85
-            LAST_UPPER=100; LAST_LOWER=99; SAILING=false; SAIL_GAP=1; save_cfg
             echo "charge_full" > "$D/.active_mode"
+            LAST_UPPER=100; LAST_LOWER=99; SAILING=false; SAIL_GAP=1
+            save_cfg
             TOKEN=$(guard_token_write_locked charge_full) || {
                 echo "idle" > "$D/.active_mode"
                 guard_unlock

@@ -21,7 +21,8 @@ mkdir -p "$NOTIFY_DIR"
 
 LAST_UPPER=80; LAST_LOWER=75; SAILING=true; SAIL_GAP=10
 [ -f "$MYCFG" ] && source "$MYCFG"
-# ACTIVE_MODE already read at top
+ACTIVE_MODE=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
+[ -z "$ACTIVE_MODE" ] && ACTIVE_MODE="idle"
 
 # === STATUS CACHE (20s TTL) ===
 NOW_TS=$(date +%s)
@@ -263,7 +264,9 @@ fi
 
 
 # === MODE text ===
-if [ "$PROC_C" -gt 0 ]; then
+if [ "$ACTIVE_MODE" = "charge_full" ]; then
+    MODE="Charging to 100%"
+elif [ "$PROC_C" -gt 0 ]; then
     MODE="Calibrating"
 elif [ "$PROC_D" -gt 0 ]; then
     MODE="Discharging to ${LAST_UPPER}%"
