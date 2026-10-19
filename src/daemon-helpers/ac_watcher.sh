@@ -38,7 +38,7 @@ if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
     ACTIVE_MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
     [ -z "$ACTIVE_MODE" ] && ACTIVE_MODE="idle"
     case "$ACTIVE_MODE" in
-        charge_full|discharge|calibration)
+        charge_full|discharge|calibration|hold)
             log "AC CONNECTED — skipping (active_mode=$ACTIVE_MODE)"
             exit 0
             ;;

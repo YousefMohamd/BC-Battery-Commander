@@ -189,8 +189,8 @@ fi
 
 AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
 [ -z "$AM_L3" ] && AM_L3=idle
-if [ "$AM_L3" = "charge_full" ]; then
-    log "LAYER3: charge_full active — deferring drift correction"
+if [ "$AM_L3" = "charge_full" ] || [ "$AM_L3" = "hold" ]; then
+    log "LAYER3: active_mode=$AM_L3 — skipping drift correction"
 elif [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
     case "$AM_L3" in
         discharge|calibration)
