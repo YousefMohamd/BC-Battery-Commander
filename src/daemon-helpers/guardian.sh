@@ -52,11 +52,6 @@ PCT=$(echo "$STATUS" | grep -oE 'Capacity [0-9]+' | grep -oE '[0-9]+' | head -1)
 SMC_UPPER=$(echo "$STATUS" | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
 SMC_LOWER=$(echo "$STATUS" | grep -oE 'lower limit [0-9]+' | grep -oE '[0-9]+' | head -1)
 
-# Extract NCR from ioreg (needed for silent hold detection)
-IOREG_DATA=$(ioreg -rn AppleSmartBattery 2>/dev/null)
-NCR=$(echo "$IOREG_DATA" | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)
-[ -z "$NCR" ] && NCR=0
-
 [ -z "$PCT" ] && exit 0
 
 # ═══════════════════════════════════════════════════════
@@ -150,17 +145,6 @@ fi
 HOLD_SINCE="$HOME/.battopt-swiftbar/.hold_since"
 AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
 [ -z "$AM_L3" ] && AM_L3=idle
-
-# LAYER 3a: Silent hold detection (before drift check)
-if [ "$NCR" = "14" ] && [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" = "$UPPER" ] && [ "$AM_L3" != "hold" ]; then
-    log "LAYER3a: silent hold detected (NCR=14, SMC=$SMC_UPPER=cfg=$UPPER, mode=$AM_L3) — correcting"
-    MODE_FILE="$HOME/.battopt-swiftbar/.active_mode"
-    TMP="$MODEFILE.tmp.$$"
-    TMP="$MODE_FILE.tmp.$$"
-    printf '%s\n' "hold" > "$TMP" && mv "$TMP" "$MODE_FILE"
-    AM_L3="hold"
-    date +%s > "$HOLD_SINCE"
-fi
 
 if [ "$AM_L3" = "hold" ]; then
     [ -f "$HOLD_SINCE" ] || date +%s > "$HOLD_SINCE"
