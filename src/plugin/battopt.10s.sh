@@ -81,7 +81,6 @@ if [ -z "$SNAP" ] || echo "$SNAP" | grep -q "Timeout\|not running"; then
     echo "$FAILS" > "$FAIL_FILE"
     if [ "$FAILS" -ge 3 ]; then
         notify_proactive_v2 "daemon_recovery" 600 "Recovery" "Daemon unresponsive"
-        "$HOME/.battopt-swiftbar/force_reset.sh" >/dev/null 2>&1 &
         echo "0" > "$FAIL_FILE"
     fi
 else
@@ -309,6 +308,14 @@ if [ "$ACTIVE_MODE" = "idle" ]; then
     echo "✓ Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
 else
     echo "Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
+fi
+# Sailing sub-indicator (restored v1.7.1)
+if [ "$SAILING" = "true" ]; then
+    echo "-- ✓ Sailing Mode (gap ${SAIL_GAP}%) | bash=$DISPATCH param1=sail_on terminal=false refresh=true"
+    echo "-- Switch to Static Hold | bash=$DISPATCH param1=sail_off terminal=false refresh=true"
+else
+    echo "-- Static Hold Mode | bash=$DISPATCH param1=sail_off terminal=false refresh=true checked=true"
+    echo "-- Switch to Sailing (gap ${SAIL_GAP}%) | bash=$DISPATCH param1=sail_on terminal=false refresh=true"
 fi
 echo "Remove Limit (hold current) | bash=$DISPATCH param1=remove_limit_hold terminal=false refresh=true"
 echo "Disable All Limits (charge 100%) | bash=$DISPATCH param1=disable_limit terminal=false refresh=true color=#909090"
