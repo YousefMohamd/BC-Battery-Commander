@@ -1,25 +1,31 @@
 #!/bin/bash
 BAT="/usr/local/bin/battopt"
 PLIST="/Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist"
-DOMAIN="system/com.buddha-path.BattOpt.daemon"
 LOG="$HOME/.battopt-swiftbar/actions.log"
-[ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
+DASH="$HOME/.battopt-swiftbar"
+
+source "$DASH/state_guard.sh" 2>/dev/null
+
+[ -f "$DASH/.user_shutdown" ] && exit 0
 
 echo "[$(date '+%H:%M:%S')] FORCE RESET start" >> "$LOG"
-rm -f "$HOME/.battopt-swiftbar/.disabled"
+rm -f "$DASH/.disabled"
 
-# Kill all clients
+if command -v guard_publish_session >/dev/null 2>&1; then
+    guard_publish_session "recovery" "-" "idle" "reset" "recovery" "-" "-" "-" "$(date +%s)" "0" || true
+fi
+
+rm -f "$DASH/.desired_state"
+
 sudo pkill -9 -f "/usr/local/bin/battopt" 2>/dev/null
 sleep 1
 
-# Check if daemon loaded
 if ! launchctl list | grep -q "com.buddha-path.BattOpt.daemon"; then
     echo "[$(date '+%H:%M:%S')] daemon not loaded, loading" >> "$LOG"
     sudo -n /usr/local/bin/battopt-daemon-start 2>/dev/null
     sleep 2
 fi
 
-# Kickstart (or fallback to unload/load if kickstart fails)
 if ! sudo -n /usr/local/bin/battopt-daemon-restart 2>/dev/null; then
     echo "[$(date '+%H:%M:%S')] kickstart failed, reloading" >> "$LOG"
     sudo launchctl unload -w "$PLIST" 2>/dev/null
@@ -27,7 +33,6 @@ if ! sudo -n /usr/local/bin/battopt-daemon-restart 2>/dev/null; then
     sudo -n /usr/local/bin/battopt-daemon-start 2>/dev/null
 fi
 
-# Wait for daemon ready
 for i in $(seq 1 10); do
     sleep 0.3
     sudo -n "$BAT" status >/dev/null 2>&1 && break
@@ -36,8 +41,3 @@ done
 STATE=$(sudo -n "$BAT" status 2>&1 | grep -oE "(charging|discharging|no charging)" | head -1)
 echo "[$(date '+%H:%M:%S')] FORCE RESET done - ${STATE:-unknown}" >> "$LOG"
 echo "State: ${STATE:-unknown}"
-
-# Reset session state (avoid stale active_mode blocking future actions)
-rm -f "$HOME/.battopt-swiftbar/.active_token"
-rm -f "$HOME/.battopt-swiftbar/.sd_session"
-echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
