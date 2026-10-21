@@ -93,7 +93,7 @@ else
         || sreason="missing battopt-daemon-restart"
     printf '%s\n' "$scontent" | grep -q '\.sys_info' \
         || sreason="${sreason:+$sreason; }missing .sys_info"
-    pmset_n="$(printf '%s\n' "$scontent" | grep -o 'pmset' | wc -l | tr -d ' ')"
+     grep -o 'pmset' | grep -o 'pmset' | wc -l | tr -d ' ')"
     [ "$pmset_n" = "1" ] \
         || sreason="${sreason:+$sreason; }pmset appears $pmset_n times (want 1)"
     if [ -z "$sreason" ]; then
