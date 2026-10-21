@@ -1,0 +1,18 @@
+#!/bin/bash
+# Sets top-level limit_enable = 1 in battopt_cfg
+CFG="/Library/Application Support/battopt/battopt_cfg"
+[ -f "$CFG" ] || { echo "CFG_NOT_FOUND"; exit 1; }
+
+/usr/bin/python3 <<PYEOF
+cfg = "$CFG"
+with open(cfg, 'rb') as f:
+    c = f.read()
+needle = b'limit_enable = 0'
+if c.startswith(needle):
+    c = b'limit_enable = 1' + c[len(needle):]
+    with open(cfg, 'wb') as f:
+        f.write(c)
+    print("RESTORED")
+else:
+    print("already_enabled" if c.startswith(b'limit_enable = 1') else "no_match")
+PYEOF

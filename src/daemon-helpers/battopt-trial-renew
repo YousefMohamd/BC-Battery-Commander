@@ -1,7 +1,25 @@
 #!/bin/bash
+# BattOpt Trial Renew — reset trial by restarting daemon
+# .sys_info holds trial date; removing it triggers fresh trial on daemon start
+
 PLIST="/Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist"
 FILE="/Library/Application Support/battopt/.sys_info"
 
-launchctl unload "$PLIST" 2>/dev/null
-rm -f "$FILE"
-launchctl load "$PLIST" 2>/dev/null
+if [ ! -f "$FILE" ]; then
+    echo "no .sys_info — daemon may not be running"
+    exit 0
+fi
+
+sudo -n launchctl unload "$PLIST" 2>/dev/null
+sleep 1
+sudo -n rm -f "$FILE"
+sleep 1
+sudo -n launchctl load -w "$PLIST" 2>/dev/null
+sleep 2
+
+if pgrep -f "battopt daemon" >/dev/null; then
+    echo "trial renewed — daemon restarted"
+else
+    echo "WARN: daemon not running after renewal"
+    exit 1
+fi
