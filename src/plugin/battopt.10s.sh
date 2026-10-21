@@ -23,22 +23,28 @@ LAST_UPPER=80; LAST_LOWER=75; SAILING=true; SAIL_GAP=10
 [ -f "$MYCFG" ] && source "$MYCFG"
 # ACTIVE_MODE already read at top
 
-# === STATUS CACHE (20s TTL) ===
-NOW_TS=$(date +%s)
+# === STATUS CACHE (10s TTL) ===
 STATUS_CACHE="$HOME/.battopt-swiftbar/.status_cache"
 CACHE_TTL=10
-if [ -f "$STATUS_CACHE" ]; then
-    CACHE_AGE=$(($NOW_TS - $(stat -f %m "$STATUS_CACHE" 2>/dev/null || echo 0)))
-else
-    CACHE_AGE=9999
-fi
+NOW_TS=$(date +%s)
 
-if [ "$CACHE_AGE" -lt "$CACHE_TTL" ]; then
-    SNAP=$(cat "$STATUS_CACHE")
-else
-    SNAP=$(sudo -n "$BAT" status 2>/dev/null)
-    [ -n "$SNAP" ] && echo "$SNAP" > "$STATUS_CACHE"
-fi
+read_status_cached() {
+    if [ -f "$STATUS_CACHE" ]; then
+        local cache_mtime
+        cache_mtime=$(stat -f %m "$STATUS_CACHE" 2>/dev/null || echo 0)
+        if [ $((NOW_TS - cache_mtime)) -lt "$CACHE_TTL" ]; then
+            cat "$STATUS_CACHE"
+            return 0
+        fi
+    fi
+    local fresh
+    fresh=$("$BAT" status 2>&1)
+    if [ -n "$fresh" ] && ! echo "$fresh" | grep -q "Timeout\|not running"; then
+        printf '%s\n' "$fresh" > "$STATUS_CACHE.tmp.$$" && mv "$STATUS_CACHE.tmp.$$" "$STATUS_CACHE"
+    fi
+    printf '%s\n' "$fresh"
+}
+SNAP=$(read_status_cached)
 
 # ============ PROACTIVE NOTIFICATIONS ============
 
@@ -241,7 +247,9 @@ PROC_D_NOW=$(sudo -n pgrep -f "battopt discharge" 2>/dev/null | wc -l | tr -d ' 
 PROC_CH_NOW=$(pgrep -f "battopt charge " 2>/dev/null | wc -l | tr -d ' ')
 PROC_CAL_NOW=$(pgrep -f "battopt calibrate" 2>/dev/null | wc -l | tr -d ' ')
 
-if [ "$PROC_D_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "discharge" ]; then
+if [ "$ICON_ACTIVE" = "hold" ]; then
+    ICON="🔌"
+elif [ "$PROC_D_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "discharge" ]; then
     ICON="🔋"
 elif [ "$PROC_CAL_NOW" -gt 0 ] || [ "$ICON_ACTIVE" = "calibration" ]; then
     ICON="⚡"
@@ -494,7 +502,7 @@ case "$SM_STATE" in
     travel)       SM_TRV_MARK="✓"; SM_TRV_COLOR="color=#34C759" ;;
 esac
 
-echo "Sleep Mode — ${SM_TITLE} | size=14 color=#007AFF"
+echo "Sleep Mode — ${SM_TITLE} | size=14 color=#FFFFFF"
 echo "-- ${SM_DEF_MARK} Normal | bash=$DISPATCH param1=sleep_mode_default terminal=false refresh=true size=12 ${SM_DEF_COLOR}"
 echo "-- macOS handles sleep | size=9 color=#909090 disabled=true"
 echo "-- ${SM_PRE_MARK} Presentation | bash=$DISPATCH param1=sleep_mode_presentation terminal=false refresh=true size=12 ${SM_PRE_COLOR}"
@@ -503,6 +511,7 @@ echo "-- ${SM_LT_MARK} Long Tasks | bash=$DISPATCH param1=sleep_mode_download te
 echo "-- Lid closed · AC required | size=9 color=#909090 disabled=true"
 echo "-- ${SM_TRV_MARK} Travel | bash=$DISPATCH param1=sleep_mode_travel terminal=false refresh=true size=12 ${SM_TRV_COLOR}"
 echo "-- Battery holds longer (4h) | size=9 color=#909090 disabled=true"
+echo "-- ────────────────────────── | size=9 color=#505050 disabled=true"
 echo "-- Prepare for Sleep | bash=$DISPATCH param1=arm_sleep terminal=false refresh=true size=12 color=#007AFF"
 echo "-- Close audio apps · arm sleep | size=9 color=#909090 disabled=true"
 # === SLEEP OVERRIDES ===
@@ -617,8 +626,6 @@ echo "Show Full Status... | bash=$DISPATCH param1=details terminal=false"
 echo "Sleep & Battery Report | bash=$DISPATCH param1=sleep_report terminal=false"
 echo "Save Report (silent) | bash=$DISPATCH param1=sleep_report_save terminal=false"
 echo "Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false"
-echo "Open BattOpt Logs | bash=/usr/bin/open param1=/Library/Logs/battopt/ terminal=false"
-echo "Open Actions Log | bash=$DISPATCH param1=open_actions_log terminal=false"
 echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
 
 LOGIN_STATE=$(osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -c "BattOpt" || true)
@@ -788,8 +795,6 @@ else
     echo "-- Enable Power Saver | bash=$DISPATCH param1=power_saver_on terminal=false refresh=true color=#30D158 size=12"
 fi
 echo "-- Show Full Report | bash=$DISPATCH param1=power_saver_report terminal=false size=12"
-echo "-- Save Report to File | bash=$DISPATCH param1=sleep_report_save terminal=false refresh=true size=12"
-echo "-- Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false size=12"
 
 # ============ AUTO CLEANUP SECTION ============
 AUTO_STATE=$([ -f "$HOME/.battopt-swiftbar/.auto_cleanup" ] && echo "ON" || echo "OFF")
@@ -825,15 +830,6 @@ fi
 
 # ============ SYSTEM RESOURCES ============
 # ============ DEVELOPER TOOLS SECTION ============
-echo "Developer Tools ▶ | size=11 color=#007AFF"
-echo "-- Project Health Check | bash=$DISPATCH param1=project_health terminal=false refresh=true size=12"
-echo "--    Verify all components | size=10 color=#909090 disabled=true"
-echo "-- Conflict Detection | bash=$DISPATCH param1=conflict_check terminal=false size=12"
-echo "--    Find tools that clash | size=10 color=#909090 disabled=true"
-echo "-- Predictive Analysis | bash=$DISPATCH param1=predictive terminal=false size=12"
-echo "--    Detect trends before problems | size=10 color=#909090 disabled=true"
-echo "-- Process Monitor | bash=$DISPATCH param1=process_monitor terminal=false size=12"
-echo "--    Auto-fix process loops | size=10 color=#909090 disabled=true"
 
 # ============ LOGS SECTION ============
 echo "Logs ▶ | size=11 color=#007AFF"
@@ -866,5 +862,7 @@ if [ -n "$DAEMON_PID" ]; then
 else
     echo "battopt daemon: NOT RUNNING | size=11 color=red"
 fi
+AGENT_COUNT=$(launchctl list 2>/dev/null | grep -c "com.battopt")
+echo "Services: ${AGENT_COUNT} agents loaded | size=11 color=#909090"
 echo "---"
-echo "Shut Down BattOpt... | bash=$DISPATCH param1=shutdown terminal=false refresh=true color=red"
+echo "Stop ALL Services (full shutdown) | bash=$DISPATCH param1=shutdown terminal=false refresh=true color=red"
