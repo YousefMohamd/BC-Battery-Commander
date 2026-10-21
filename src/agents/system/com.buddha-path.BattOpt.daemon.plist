@@ -1,0 +1,32 @@
+
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+    <dict>
+        <key>Label</key>
+        <string>com.buddha-path.BattOpt.daemon</string>
+        
+        <key>ProgramArguments</key>
+        <array>
+            <string>/Library/Application Support/battopt/battopt</string>
+            <string>daemon</string>
+        </array>
+        <key>AssociatedBundleIdentifiers</key>
+        <array>
+            <string>com.buddha-path.BattOpt</string>
+        </array>
+        <key>KeepAlive</key>
+        <true/> 
+        
+        <key>RunAtLoad</key>
+        <true/>
+
+        <key>ThrottleInterval</key>
+        <integer>10</integer>
+
+        <key>StandardOutPath</key>
+        <string>/Library/Logs/battopt/battopt.log</string>
+        <key>StandardErrorPath</key>
+        <string>/Library/Logs/battopt/battopt.log</string>
+    </dict>
+</plist>

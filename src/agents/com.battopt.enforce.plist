@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.battopt.enforce</string>
+    <key>ProgramArguments</key>
+    <array><string>/Users/Yousef/.battopt-swiftbar/enforce_watchdog.sh</string></array>
+    <key>StartInterval</key><integer>15</integer>
+    <key>RunAtLoad</key><true/>
+    <key>StandardErrorPath</key><string>/tmp/battopt-enforce.err</string>
+    <key>StandardOutPath</key><string>/tmp/battopt-enforce.out</string>
+</dict>
+</plist>
