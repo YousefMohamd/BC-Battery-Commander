@@ -155,7 +155,8 @@ AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:
 if [ "$NCR" = "14" ] && [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" = "$UPPER" ] && [ "$AM_L3" != "hold" ]; then
     log "LAYER3a: silent hold detected (NCR=14, SMC=$SMC_UPPER=cfg=$UPPER, mode=$AM_L3) — correcting"
     MODE_FILE="$HOME/.battopt-swiftbar/.active_mode"
-    printf '%s\n' "hold" > "$MODE_FILE"
+    TMP="$MODE_FILE.tmp.$$"
+    printf '%s\n' "hold" > "$TMP" && mv "$TMP" "$MODE_FILE"
     AM_L3="hold"
     date +%s > "$HOLD_SINCE"
 fi
