@@ -4,6 +4,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 APPLE_SCRIPT="$SCRIPT_DIR/BattOpt.applescript"
+LAUNCHER_SCRIPT="$SCRIPT_DIR/BattOpt-launcher.sh"
 TMP_APP="/tmp/BattOpt.app"
 INSTALL_APP="/Applications/BattOpt.app"
 APP_PATH="$TMP_APP"
@@ -28,12 +29,21 @@ done
 if [ ! -f "$APPLE_SCRIPT" ]; then
     echo "FAIL: AppleScript source not found: $APPLE_SCRIPT"
     BUILD_OK=0
+elif [ ! -f "$LAUNCHER_SCRIPT" ]; then
+    echo "FAIL: launcher source not found: $LAUNCHER_SCRIPT"
+    BUILD_OK=0
 else
     rm -rf "$TMP_APP"
 
     if osacompile -o "$TMP_APP" "$APPLE_SCRIPT"; then
-        BUILD_OK=1
-        echo "Build completed: $TMP_APP"
+        if cp "$LAUNCHER_SCRIPT" "$TMP_APP/Contents/Resources/BattOpt-launcher.sh"; then
+            chmod 755 "$TMP_APP/Contents/Resources/BattOpt-launcher.sh"
+            BUILD_OK=1
+            echo "Build completed: $TMP_APP"
+        else
+            echo "FAIL: could not add launcher to app resources"
+            BUILD_OK=0
+        fi
     else
         echo "FAIL: osacompile failed"
         BUILD_OK=0
@@ -46,6 +56,7 @@ verify_app() {
     local executable_value=""
     local file_ok=0
     local plist_ok=0
+    local launcher_ok=0
 
     echo
     echo "=== BattOpt.app Verification ==="
@@ -80,12 +91,21 @@ verify_app() {
         echo "FAIL: missing Info.plist: $path/Contents/Info.plist"
     fi
 
+    if [ -x "$path/Contents/Resources/BattOpt-launcher.sh" ]; then
+        launcher_ok=1
+        echo "PASS: BattOpt-launcher.sh is present and executable"
+    else
+        echo "FAIL: missing or non-executable launcher: $path/Contents/Resources/BattOpt-launcher.sh"
+    fi
+
     echo "Code-signing status:"
     codesign -dv "$path" 2>&1 | head -2 || true
 
     echo "Built app: $path"
 
-    [ "$file_ok" -eq 1 ] && [ "$plist_ok" -eq 1 ]
+    [ "$file_ok" -eq 1 ] &&
+    [ "$plist_ok" -eq 1 ] &&
+    [ "$launcher_ok" -eq 1 ]
 }
 
 if [ "$BUILD_OK" -eq 1 ]; then
