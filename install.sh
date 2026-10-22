@@ -7,7 +7,6 @@ PLUGIN_DIR="$HOME/SwiftBar"
 AGENT_DIR="$HOME/Library/LaunchAgents"
 APP_BUNDLE="/Applications/BattOpt.app"
 APP_LAUNCHER="$APP_BUNDLE/Contents/Resources/BattOpt-launcher.sh"
-PLIST="com.battopt.sleepmonitor.plist"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$DASH/.install-backup/$STAMP"
 
@@ -78,10 +77,53 @@ done
 # 2. Copy plugin
 copy_with_backup "$ROOT/src/plugin/battopt.10s.sh" "$PLUGIN_DIR/battopt.10s.sh"
 
-# 3. Copy plist
-copy_with_backup "$ROOT/src/agents/$PLIST" "$AGENT_DIR/$PLIST"
+# 3. Build powerwatch binary
+if [ -x /usr/bin/clang ]; then
+    OUT="$DASH/powerwatch.new"
+    /usr/bin/clang -O2 -framework IOKit -framework CoreFoundation \
+        -o "$OUT" "$ROOT/src/powerwatch/powerwatch.c" 2>&1 | tee -a "$BACKUP/build.log"
+    if [ -x "$OUT" ]; then
+        OLD_SUM=$(cksum "$DASH/powerwatch" 2>/dev/null | awk '{print $1}')
+        NEW_SUM=$(cksum "$OUT" | awk '{print $1}')
+        if [ "$OLD_SUM" != "$NEW_SUM" ]; then
+            sudo -n /usr/local/bin/battopt-powerwatch-stop 2>/dev/null || true
+            sudo cp "$OUT" "$DASH/powerwatch"
+            sudo chmod 0755 "$DASH/powerwatch"
+            rm -f "$OUT"
+            sudo -n /usr/local/bin/battopt-powerwatch-start 2>/dev/null || true
+        else
+            rm -f "$OUT"
+        fi
+    else
+        echo "WARNING: powerwatch compile failed" >&2
+    fi
+else
+    echo "WARNING: clang missing; powerwatch not rebuilt" >&2
+fi
 
-# 4. Install or build the complete BattOpt.app bundle.
+# 4. Create default config if absent
+if [ ! -f "$DASH/config" ]; then
+    printf 'LAST_UPPER=85\nLAST_LOWER=80\nSAILING=false\nSAIL_GAP=1\n' > "$DASH/config"
+    chmod 0644 "$DASH/config"
+fi
+
+# 5. Copy all user plists
+for plist in "$ROOT"/src/agents/*.plist; do
+    [ -f "$plist" ] || continue
+    copy_with_backup "$plist" "$AGENT_DIR/$(basename "$plist")"
+done
+
+# 6. Install system daemon plists
+for plist in "$ROOT"/src/agents/system/*.plist; do
+    [ -f "$plist" ] || continue
+    dst="/Library/LaunchDaemons/$(basename "$plist")"
+    if [ -e "$dst" ]; then
+        sudo cp -p "$dst" "$BACKUP/root-plist-$(basename "$plist")"
+    fi
+    sudo install -o root -g wheel -m 0644 "$plist" "$dst"
+done
+
+# 7. Install or build the complete BattOpt.app bundle.
 if [ -d "$APP_BUNDLE" ]; then
     if [ -e "$APP_LAUNCHER" ]; then
         sudo cp -p "$APP_LAUNCHER" "$BACKUP/BattOpt-launcher.sh"
@@ -93,7 +135,7 @@ else
     "$ROOT/src/app/build-app.sh" --install
 fi
 
-# 5. Syntax check installed shell scripts.
+# 8. Syntax check installed shell scripts.
 for file in "$DASH"/*.sh "$PLUGIN_DIR/battopt.10s.sh"; do
     [ -f "$file" ] && bash -n "$file"
 done
@@ -102,7 +144,7 @@ for name in $ROOT_HELPERS; do
     bash -n "/usr/local/bin/$name"
 done
 
-# 6. Sudoers: validate first, back up, then install.
+# 9. Sudoers: validate first, back up, then install.
 SUDOERS_SRC="$ROOT/src/sudoers/battopt"
 SUDOERS_DST="/etc/sudoers.d/battopt"
 SUDOERS_TMP="/tmp/battopt-sudoers.$$"
@@ -131,16 +173,29 @@ sudo rm -f "$SUDOERS_TMP"
 
 sudo visudo -cf "$SUDOERS_DST"
 
-# 7. Reload new plist
-launchctl unload "$AGENT_DIR/$PLIST" 2>/dev/null || true
-launchctl load -w "$AGENT_DIR/$PLIST"
-
-# 8. Reload existing agents
+# 10. Reload user agents
 for plist in "$AGENT_DIR"/com.battopt.*.plist; do
     [ -f "$plist" ] || continue
-    [ "$plist" = "$AGENT_DIR/$PLIST" ] && continue
-    launchctl unload "$plist" 2>/dev/null || true
+    launchctl unload -w "$plist" 2>/dev/null || true
     launchctl load -w "$plist"
 done
+
+# 11. Reload system daemons
+for plist in /Library/LaunchDaemons/com.buddha-path.*.plist \
+    /Library/LaunchDaemons/com.battopt.powerwatch.plist; do
+    [ -f "$plist" ] || continue
+    label=$(/usr/libexec/PlistBuddy -c "Print :Label" "$plist" 2>/dev/null || echo "")
+    if [ -n "$label" ]; then
+        sudo launchctl bootout "system/$label" 2>/dev/null || true
+        sudo launchctl bootstrap system "$plist" 2>/dev/null || true
+    fi
+done
+
+# 12. Run verify-install if present
+if [ -x "$DASH/verify-install.sh" ]; then
+    echo ""
+    echo "=== Running verify-install.sh ==="
+    bash "$DASH/verify-install.sh" || echo "WARN: verify-install reported issues"
+fi
 
 echo "BattOpt install complete. Backup: $BACKUP"
