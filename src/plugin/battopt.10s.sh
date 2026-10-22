@@ -314,6 +314,29 @@ else
 fi
 [ -n "$TEMP" ] && echo "Temperature: ${TEMP}°C | size=11 ${ALERT_COLOR:-color=#909090}"
 echo "---"
+# === 7-DAY TEST COUNTDOWN ===
+if [ -f "$DASH/.7day_test_start" ]; then
+    start_ts=$(cat "$DASH/.7day_test_start")
+    now_ts=$(date +%s)
+    elapsed=$(( (now_ts - start_ts) / 86400 ))
+    days_left=$(( 7 - elapsed ))
+
+    if [ "$days_left" -ge 0 ]; then
+        echo "🧪 7-Day Test: $days_left days left | color=#FF9500"
+    else
+        echo "🧪 7-Day Test: COMPLETE | color=#30D158"
+        if [ ! -f "$DASH/.report_sent" ]; then
+            bash "$DASH/verify-install.sh" > "$DASH/final_report.txt" 2>&1
+            bash "$DASH/self_maintenance.sh" >> "$DASH/final_report.txt" 2>&1
+            /Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier -title "BattOpt Alert" -message "7-Day Test Complete! Report saved to $DASH/final_report.txt"
+            touch "$DASH/.report_sent"
+            rm -f "$DASH/.7day_test_start"
+        fi
+    fi
+    echo "---"
+fi
+# === END 7-DAY TEST ===
+
 
 PMSET_OUT=$(pmset -g custom 2>/dev/null)
 PMSET_SECTION=""
