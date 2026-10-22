@@ -1,4 +1,5 @@
 #!/bin/bash
+LOG="$HOME/.battopt-swiftbar/maintenance.log"; exec >> "$LOG" 2>&1
 DASH="$HOME/.battopt-swiftbar"
 FAIL_REASON=""
 
