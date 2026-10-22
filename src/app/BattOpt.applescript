@@ -8,7 +8,7 @@ end run
 
 on quit
     try
-        do shell script "/bin/bash $HOME/.battopt-swiftbar/dispatch.sh shutdown >/dev/null 2>&1 &"
+        do shell script "/bin/bash $HOME/.battopt-swiftbar/dispatch.sh shutdown"
     end try
     continue quit
 end quit

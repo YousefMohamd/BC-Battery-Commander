@@ -1,10 +1,11 @@
 #!/bin/bash
 
+DASH="$HOME/.battopt-swiftbar"
 BAT="/usr/local/bin/battopt"
-LOG="$HOME/.battopt-swiftbar/actions.log"
-LOCK="$HOME/.battopt-swiftbar/.op.lock"
-CFG="$HOME/.battopt-swiftbar/config"
-FORCE="$HOME/.battopt-swiftbar/force_reset.sh"
+LOG="$DASH/actions.log"
+LOCK="$DASH/.op.lock"
+CFG="$DASH/config"
+FORCE="$DASH/force_reset.sh"
 
 # Shared session guard (state_guard.sh provides guard_session_active, etc.)
 if [ -f "$HOME/.battopt-swiftbar/state_guard.sh" ]; then
@@ -247,7 +248,7 @@ _verify_smc_upper() {
 intent_apply() {
     local kind="$1"; shift
     local U L T CUR V MODE GAP TOKEN
-    local D="$HOME/.battopt-swiftbar"
+    local D="$DASH"
 
     guard_lock || { log "intent_apply: lock failed ($kind)"; return 1; }
 
@@ -825,56 +826,23 @@ AS
         save_last_input SD_MODE "$MODE"
 
         if [ "$MODE" = "Sail" ]; then
-            LAST_GAP=$(get_last_input SD_SAIL_GAP 10)
-            case "$LAST_GAP" in
-                5|10|15|30) DEFAULT_GAP="$LAST_GAP" ;;
-                *)          DEFAULT_GAP="Custom" ;;
-            esac
-
-            G=$(osascript <<AS
-try
-    set opts to {"5", "10", "15", "30", "Custom"}
-    set sel to choose from list opts with prompt "Sail gap in %:" default items {"$DEFAULT_GAP"} with title "BattOpt - Sail Gap" OK button name "Select" cancel button name "Cancel"
-    if sel is false then
-        return "__CANCELLED__"
-    else
-        return item 1 of sel
-    end if
-on error
-    return "__CANCELLED__"
-end try
-AS
-)
-            [ "$G" = "__CANCELLED__" ] && { release; exit 0; }
-            [ "$G" != "Custom" ] && save_last_input SD_SAIL_GAP "$G"
-            if [ "$G" = "Custom" ]; then
-                G=$(osascript <<AS
-try
-    set d to display dialog "Custom sail gap (5-30):" default answer "$(get_last_input SAIL_GAP_CUSTOM 10)" buttons {"Cancel", "OK"} default button "OK" with title "BattOpt"
-    return text returned of d
-on error
-    return "__CANCELLED__"
-end try
-AS
-)
-                [ "$G" = "__CANCELLED__" ] && { release; exit 0; }
-                if ! validate_int "$G" 5 30; then
-                    notify "BattOpt" "Invalid gap (5-30) — cancelled"
-                    release
-                    exit 0
-                fi
-                save_last_input SAIL_GAP_CUSTOM "$G"
-                save_last_input SD_SAIL_GAP "$G"
+            GAP=$(get_last_input SD_SAIL_GAP "$SAIL_GAP")
+            validate_int "$GAP" 5 30 || GAP=10
+            LOW=$((T - GAP))
+            if [ "$LOW" -lt 20 ]; then
+                LOW=20
             fi
-            { [ "$G" -lt 5 ] || [ "$G" -gt 30 ]; } && G=10
-            LOW=$((T - G)); [ $LOW -lt 20 ] && LOW=20
         else
-            LOW=$((T - 1)); [ $LOW -lt 20 ] && LOW=20
-            G=0
+            GAP=0
+            LOW=$((T - 1))
+            if [ "$LOW" -lt 20 ]; then
+                LOW=20
+            fi
         fi
 
         release
-        intent_apply smart_discharge "$T" "$LOW" "$MODE" "$G" ;;
+        intent_apply smart_discharge "$T" "$LOW" "$MODE" "$GAP"
+        ;;
 
     limit_custom)
         acquire; ensure_clean
@@ -944,7 +912,7 @@ AS
             if [ "$GSEL" = "Custom" ]; then
                 GSEL=$(osascript <<AS
 try
-    set d to display dialog "Custom sail gap (5-30):" default answer "$(get_last_input SAIL_GAP_CUSTOM 10)" buttons {"Cancel","OK"} default button "OK" with title "BattOpt"
+    set d to display dialog "Custom sail gap (5-30):" default answer "$(get_last_input SAIL_GAP_CUSTOM 10)" buttons {"Cancel", "OK"} default button "OK" with title "BattOpt"
     return text returned of d
 on error
     return "__CANCELLED__"
@@ -1032,6 +1000,14 @@ AS
         [ "$CONFIRM" != "Shut Down" ] && { release; exit 0; }
         log "shutdown: START"
         START_TS=$(date +%s)
+
+        SESSION_MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
+        [ -z "$SESSION_MODE" ] && SESSION_MODE="idle"
+
+        atomic_write "$DASH/.last_session_mode" "LAST_UPPER=$LAST_UPPER
+LAST_LOWER=$LAST_LOWER
+ACTIVE_MODE=$SESSION_MODE
+"
 
         # 1. Set flag FIRST
         touch "$HOME/.battopt-swiftbar/.user_shutdown"
@@ -1646,7 +1622,7 @@ AS
     conflict_check)
         acquire
         ~/.battopt-swiftbar/conflict_check.sh > /tmp/battopt_conflicts_latest.txt 2>&1
-        BUTTON=$(osascript <<'AS'
+        BUTTON=$(osascript << 'AS'
 try
     set dialogResult to display dialog "Conflict Detection
 

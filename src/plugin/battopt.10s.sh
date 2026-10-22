@@ -309,7 +309,7 @@ echo "Health: ${HEALTH}% - ${CYCLES} cycles | size=11 $GRAY"
 if [ -n "$TEMP" ]; then
     echo "Temperature: ${TEMP}°C | size=11 ${ALERT_COLOR:-color=#909090}"
 fi
-echo "Trial: ${TRIAL:-15} days left | size=11 color=#FF9500"
+[ -n "$TRIAL" ] && echo "Trial: ${TRIAL} days | size=11 color=orange"
 
 echo "---"
 
@@ -441,7 +441,7 @@ echo "Reset to Defaults | bash=$DISPATCH param1=reset_defaults terminal=false re
 echo "---"
 
 echo "Charge Limits | size=11 color=#007AFF disabled=true"
-if [ "$ACTIVE_MODE" = "idle" ]; then
+if [ "$ACTIVE_MODE" = "idle" ] || [ "$ACTIVE_MODE" = "hold" ]; then
     echo "✓ Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
 else
     echo "Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
