@@ -1,4 +1,3 @@
-
 #!/bin/bash
 # <xbar.title>BattOpt Control Center</xbar.title>
 # <xbar.version>1.3.0</xbar.version>
@@ -307,39 +306,10 @@ echo "---"
 echo "Charge: ${PCT}% | size=11"
 echo "Mode: ${MODE} | size=11"
 echo "Health: ${HEALTH}% - ${CYCLES} cycles | size=11 $GRAY"
-if [ -n "$UPPER" ] && [ -n "$LOWER" ]; then
-    echo "Active Limit: ${UPPER}% / ${LOWER}% | size=11 $GRAY"
-else
-    echo "Active Limit: disabled | size=11 $GRAY"
+if [ -n "$TEMP" ]; then
+    echo "Temperature: ${TEMP}°C | size=11 ${ALERT_COLOR:-color=#909090}"
 fi
-
-
-[ -n "$TEMP" ] && echo "Temperature: ${TEMP}°C | size=11 ${ALERT_COLOR:-color=#909090}"
-
-
-
-
-# === 7-DAY TEST COUNTDOWN ===
-if [ -f "$DASH/.7day_test_start" ]; then
-    start_ts=$(cat "$DASH/.7day_test_start")
-    now_ts=$(date +%s)
-    elapsed=$(( (now_ts - start_ts) / 86400 ))
-    days_left=$(( 7 - elapsed ))
-
-    if [ "$days_left" -ge 0 ]; then
-        echo "🧪 7-Day Test: $days_left days left | color=#FF9500"
-    else
-        echo "🧪 7-Day Test: COMPLETE | color=#30D158"
-        if [ ! -f "$DASH/.report_sent" ]; then
-            bash "$DASH/verify-install.sh" > "$DASH/final_report.txt" 2>&1
-            bash "$DASH/self_maintenance.sh" >> "$DASH/final_report.txt" 2>&1
-            /Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier -title "BattOpt Alert" -message "7-Day Test Complete! Report saved to $DASH/final_report.txt"
-            touch "$DASH/.report_sent"
-            rm -f "$DASH/.7day_test_start"
-        fi
-    fi
-fi
-# === END 7-DAY TEST ===
+echo "Trial: ${TRIAL:-15} days left | size=11 color=#FF9500"
 
 echo "---"
 
@@ -378,6 +348,7 @@ AC_SLEEP="${PMSET_SLEEP_AC:-?}"
 [ -z "$SLEEP_VAL" ] && SLEEP_VAL="?"
 [ -z "$DISPLAY_VAL" ] && DISPLAY_VAL="?"
 [ -z "$DISK_VAL" ] && DISK_VAL="?"
+[ -z "$HIB_VAL" ] && HIB_VAL="?"
 [ -z "$AC_SLEEP" ] && AC_SLEEP="?"
 
 if [ "$SLEEP_VAL" = "5" ] && [ "$DISPLAY_VAL" = "5" ]; then
@@ -528,8 +499,33 @@ else
     echo "Launch at Login | bash=$DISPATCH param1=login_toggle terminal=false refresh=true"
 fi
 echo "Open BattOpt.app | bash=$DISPATCH param1=open_app terminal=false"
-echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
+
+# === 7-DAY TEST COUNTDOWN ===
+if [ -f "$DASH/.7day_test_start" ]; then
+    start_ts=$(cat "$DASH/.7day_test_start")
+    now_ts=$(date +%s)
+    elapsed=$(( (now_ts - start_ts) / 86400 ))
+    days_left=$(( 7 - elapsed ))
+
+    if [ "$days_left" -ge 0 ]; then
+        echo "🧪 7-Day Test: $days_left days left | color=#FF9500"
+    else
+        echo "🧪 7-Day Test: COMPLETE | color=#30D158"
+        if [ ! -f "$DASH/.report_sent" ]; then
+            bash "$DASH/verify-install.sh" > "$DASH/final_report.txt" 2>&1
+            bash "$DASH/self_maintenance.sh" >> "$DASH/final_report.txt" 2>&1
+            /Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier \
+                -title "BattOpt Alert" \
+                -message "7-Day Test Complete! Report saved to $DASH/final_report.txt"
+            touch "$DASH/.report_sent"
+            rm -f "$DASH/.7day_test_start"
+        fi
+    fi
+fi
+# === END 7-DAY TEST ===
+
 echo "About BattOpt... | bash=$DISPATCH param1=about terminal=false"
+echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
 echo "---"
 
 PSAVER_STATE=$([ -f "$HOME/.battopt-swiftbar/.power_saver" ] && echo "ON" || echo "OFF")
@@ -698,7 +694,6 @@ else
 fi
 echo "--    Auto-pauses background services when idle | size=10 $GRAY"
 echo "--    (Spotlight, Photos, Time Machine, VLC) | size=10 $GRAY"
-echo "-- ⚙️ Services paused: Spotlight, Photos, TM, VLC | size=10 $GRAY"
 echo "-- ℹ️ Trigger: after 15 min idle | size=10 $GRAY"
 echo "-- ⏱️ Current idle: ${IDLE_MIN} min | size=11 $GRAY"
 echo "-- 📌 Last cleanup: ${CLEANUP_DONE} | size=11 $GRAY"
