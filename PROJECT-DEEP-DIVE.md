@@ -140,3 +140,26 @@ We will not be held hostage by this license. The SMC (System Management Controll
 **MiniMax Feedback Applied:**
 - Added fallback for `.last_stable_config` in `dispatch.sh`.
 - Reviewed the `trap` logic and added a 1s delay to fix UI double-click glitches.
+
+## Chapter 8: The Path to Independence (Oct 22, 2026)
+
+**The Vendor Dependency:**
+The current system relies on a closed-source binary (`/usr/local/bin/battopt`) which has a 30-day trial. Once expired, the SMC limits stop working. 
+
+**The Strategic Decision:**
+We will not be held hostage by this license. The SMC (System Management Controller) on Intel Macs can be accessed via IOKit. Open-source tools like `bclm` and `smcutil` prove this is feasible. 
+
+**Action Plan (v2.0):**
+1. Finish the 7-Day Test using the current trial.
+2. Research and compile a minimal C-based SMC writer (using `IOKit` and `AppleSMC` service) to replace the vendor's limit/charge functions.
+3. Integrate the new C daemon into `src/powerwatch/` and update `install.sh` to deploy it.
+4. Deprecate the `/usr/local/bin/battopt` dependency entirely.
+
+**Current Trial Status:**
+- 15 days remaining.
+- The "Renew Trial" button has been restored to the menu bar as a safety net.
+- 7-Day test countdown has been initialized.
+
+**MiniMax Feedback Applied:**
+- Added fallback for `.last_stable_config` in `dispatch.sh`.
+- Reviewed the `trap` logic and added a 1s delay to fix UI double-click glitches.
