@@ -313,7 +313,6 @@ else
     echo "Active Limit: disabled | size=11 $GRAY"
 fi
 [ -n "$TEMP" ] && echo "Temperature: ${TEMP}°C | size=11 ${ALERT_COLOR:-color=#909090}"
-[ -n "$TRIAL" ] && echo "Trial: ${TRIAL} days | size=11 color=orange"
 echo "---"
 
 PMSET_OUT=$(pmset -g custom 2>/dev/null)
@@ -494,7 +493,6 @@ echo "Save Report (silent) | bash=$DISPATCH param1=sleep_report_save terminal=fa
 echo "Open Reports Folder | bash=$DISPATCH param1=open_reports terminal=false"
 echo "Open BattOpt Logs | bash=/usr/bin/open param1=/Library/Logs/battopt/ terminal=false"
 echo "Open Actions Log | bash=$DISPATCH param1=open_actions_log terminal=false"
-echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
 LOGIN_STATE=$(osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -c "BattOpt" || true)
 if [ "$LOGIN_STATE" -gt 0 ]; then
     echo "✓ Launch at Login | bash=$DISPATCH param1=login_toggle terminal=false refresh=true"
@@ -554,9 +552,9 @@ fi
 [ -z "$WAKE_COUNT" ] && WAKE_COUNT=0
 
 if [ "$PSAVER_STATE" = "ON" ]; then
-    echo "💤 Sleep Report: OPTIMIZED | color=#30D158"
+    echo "💤 Sleep Report: OPTIMIZED | color=#909090"
 else
-    echo "💤 Sleep Report: STANDARD | color=#FF9500"
+    echo "💤 Sleep Report: STANDARD | color=#909090"
 fi
 echo "-- 🔋 Battery: ${PCT}% | size=11"
 echo "-- 💚 Health: ${HEALTH}% · ${CYCLES} cycles | size=11 $GRAY"
@@ -665,7 +663,7 @@ IDLE_MIN=$((IDLE / 1000000000 / 60))
 CLEANUP_DONE=$([ -f "$HOME/.battopt-swiftbar/.pre_sleep_done" ] && echo "YES" || echo "NO")
 
 if [ "$AUTO_STATE" = "ON" ]; then
-    echo "Auto Cleanup: ON ▶ | color=#30D158"
+    echo "Auto Cleanup: ON ▶ | color=#909090"
 else
     echo "Auto Cleanup: OFF ▶ | color=#909090"
 fi

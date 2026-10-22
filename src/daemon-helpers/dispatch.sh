@@ -532,7 +532,7 @@ intent_apply() {
 # === END INTENT APPLY ===
 
 # Fire refresh on exit (normal + error paths)
-trap refresh_swiftbar EXIT
+trap "sleep 1; refresh_swiftbar" EXIT
 
 case "$1" in
     force_reset) "$FORCE" ;;

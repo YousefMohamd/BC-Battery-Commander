@@ -102,3 +102,18 @@ We will use MiniMax M2.1 to implement these 5 exact fixes:
 5. **Verify with `verify-install.sh`:** After any major change, run this script. If it doesn't say 13/13, revert immediately.
 
 *Documented on the night of Oct 21, 2026. Sleep well, the Mac is safe tonight.*
+
+## Chapter 7: Morning After Report (Oct 22, 2026)
+
+**Sleep Test Results:**
+- Drain: 84% -> 71% over 9.5 hours (1.36%/hr). Success.
+- DarkWake loop detected (RTC/Maintenance). This is a macOS feature, not a bug. To minimize, we cancel RTC schedules in `arm_sleep.sh`.
+- Hibernatemode 25 successfully engaged.
+
+**Fixes Applied (Oct 22):**
+1. **UI Glitch:** Buttons required double-clicks due to SwiftBar's 10s refresh loop and daemon latency. Fixed by adding `sleep 1` before triggering `refresh_swiftbar` in `dispatch.sh`.
+2. **Icons:** Discharge now shows 🔋, On Battery shows 🔴.
+3. **Colors:** Removed bright green `#30D158` from Sleep Report and Auto Cleanup.
+4. **Trial:** Removed the Trial line and "Renew Trial" button.
+5. **Shutdown State:** Fixed `dispatch.sh` to restore `.last_stable_config` on shutdown, preventing transient 100% charges from becoming permanent.
+6. **Launcher Agents:** Fixed `BattOpt-launcher.sh` to forcefully reload all 18 agents using `launchctl unload -w` and `launchctl load -w`.
