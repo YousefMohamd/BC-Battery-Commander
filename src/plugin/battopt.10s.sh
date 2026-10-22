@@ -499,6 +499,7 @@ if [ "$LOGIN_STATE" -gt 0 ]; then
 else
     echo "Launch at Login | bash=$DISPATCH param1=login_toggle terminal=false refresh=true"
 fi
+echo "Renew Trial Now | bash=/usr/local/bin/battopt-trial-renew terminal=false refresh=true"
 echo "Open BattOpt.app | bash=$DISPATCH param1=open_app terminal=false"
 echo "About BattOpt... | bash=$DISPATCH param1=about terminal=false"
 echo "---"
@@ -730,3 +731,28 @@ echo "---"
 AGENT_COUNT=$(launchctl list 2>/dev/null | grep -c "com.battopt")
 echo "Services: ${AGENT_COUNT} agents loaded | size=11 color=#909090"
 echo "Stop ALL Services (full shutdown) | bash=$DISPATCH param1=shutdown terminal=false refresh=true color=red"
+
+# === 7-DAY TEST COUNTDOWN ===
+if [ -f "$DASH/.7day_test_start" ]; then
+    start_ts=$(cat "$DASH/.7day_test_start")
+    now_ts=$(date +%s)
+    elapsed=$(( (now_ts - start_ts) / 86400 ))
+    days_left=$(( 7 - elapsed ))
+    
+    if [ "$days_left" -ge 0 ]; then
+        echo "---"
+        echo "🧪 7-Day Test: $days_left days left | color=#FF9500"
+    else
+        # Self-destruct: generate final report
+        echo "---"
+        echo "🧪 7-Day Test: COMPLETE | color=#30D158"
+        if [ ! -f "$DASH/.report_sent" ]; then
+            bash "$DASH/verify-install.sh" > "$DASH/final_report.txt" 2>&1
+            bash "$DASH/self_maintenance.sh" >> "$DASH/final_report.txt" 2>&1
+            /Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier -title "BattOpt Alert" -message "7-Day Test Complete! Report saved to $DASH/final_report.txt"
+            touch "$DASH/.report_sent"
+            rm -f "$DASH/.7day_test_start"
+        fi
+    fi
+fi
+

@@ -198,4 +198,8 @@ if [ -x "$DASH/verify-install.sh" ]; then
     bash "$DASH/verify-install.sh" || echo "WARN: verify-install reported issues"
 fi
 
+if [ ! -f "$DASH/.7day_test_start" ]; then
+    date +%s > "$DASH/.7day_test_start"
+fi
+
 echo "BattOpt install complete. Backup: $BACKUP"
