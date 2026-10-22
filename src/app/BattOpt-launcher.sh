@@ -79,6 +79,7 @@ fi
 
 case "$SESSION_MODE" in
     hold|idle)
+        echo "$SESSION_MODE" > "$DASH/.active_mode"
         sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1 &
         ;;
     discharge)
