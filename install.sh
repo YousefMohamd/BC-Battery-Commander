@@ -123,17 +123,12 @@ for plist in "$ROOT"/src/agents/system/*.plist; do
     sudo install -o root -g wheel -m 0644 "$plist" "$dst"
 done
 
-# 7. Install or build the complete BattOpt.app bundle.
-if [ -d "$APP_BUNDLE" ]; then
-    if [ -e "$APP_LAUNCHER" ]; then
-        sudo cp -p "$APP_LAUNCHER" "$BACKUP/BattOpt-launcher.sh"
-    fi
-    sudo install -m 0755 \
-        "$ROOT/src/app/BattOpt-launcher.sh" \
-        "$APP_LAUNCHER"
-else
-    "$ROOT/src/app/build-app.sh" --install
-fi
+# 7. Install or rebuild the complete BattOpt.app bundle.
+#
+# Always rebuild the applet so changes to BattOpt.applescript reach the
+# deployed application. build-app.sh also installs the current launcher
+# resource and preserves its existing backup/install behavior.
+"$ROOT/src/app/build-app.sh" --install
 
 # 8. Syntax check installed shell scripts.
 for file in "$DASH"/*.sh "$PLUGIN_DIR/battopt.10s.sh"; do
