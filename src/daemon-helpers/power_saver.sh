@@ -57,12 +57,14 @@ apply_delays() {
     sudo -n "$PMSET_BIN" -b standbydelaylow "$battery_low"
     sudo -n "$PMSET_BIN" -b autopoweroffdelay "$battery_auto"
     sudo -n "$PMSET_BIN" -b standbydelay "$battery_high"
+    sudo -n "$PMSET_BIN" -b disksleep 10
 
     sudo -n "$PMSET_BIN" -c standbydelayhigh "$ac_high"
     sudo -n "$PMSET_BIN" -c standbydelaylow "$ac_low"
     sudo -n "$PMSET_BIN" -c autopoweroffdelay "$ac_auto"
     sudo -n "$PMSET_BIN" -c standbydelay "$ac_high"
     sudo -n "$PMSET_BIN" -c sleep "$ac_sleep"
+    sudo -n "$PMSET_BIN" -c disksleep 10
 
     log "apply_delays: profile=$profile battery=$battery_high/$battery_low/$battery_auto ac=$ac_high/$ac_low/$ac_auto sleep=$ac_sleep"
 }
