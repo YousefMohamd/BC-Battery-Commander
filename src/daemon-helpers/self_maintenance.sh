@@ -12,12 +12,21 @@ fi
 if [ -z "$FAIL_REASON" ]; then
     source "$DASH/config" 2>/dev/null
     UPPER=${LAST_UPPER:-85}
-    CAP=$(ioreg -rn AppleSmartBattery | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
-    EXT=$(ioreg -rn AppleSmartBattery | grep -oE '"ExternalConnected" = [A-Za-z]+' | awk '{print $3}')
-    NCR=$(ioreg -rn AppleSmartBattery | grep -oE '"NotChargingReason"=[0-9]+' | cut -d= -f2)
 
-    if [ "$EXT" = "Yes" ] && [ -n "$CAP" ] && [ "$CAP" -ge "$UPPER" ] && [ "$NCR" != "14" ]; then
-        FAIL_REASON="SMC not holding at $UPPER% (Current: $CAP%, NCR: $NCR)"
+    BATT_DATA=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+    CUR=$(echo "$BATT_DATA" | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
+    MAX=$(echo "$BATT_DATA" | grep -oE '"MaxCapacity" = [0-9]+' | awk '{print $3}')
+    EXT=$(echo "$BATT_DATA" | grep -oE '"ExternalConnected" = [A-Za-z]+' | awk '{print $3}')
+    NCR=$(echo "$BATT_DATA" | grep -oE '"NotChargingReason"=[0-9]+' | cut -d= -f2)
+
+    if [ "$MAX" -gt 0 ] 2>/dev/null; then
+        PCT=$(( (CUR * 100 + MAX / 2) / MAX ))
+    else
+        PCT=""
+    fi
+
+    if [ "$EXT" = "Yes" ] && [ -n "$PCT" ] && [ "$PCT" -ge "$UPPER" ] && [ "$NCR" != "14" ]; then
+        FAIL_REASON="SMC not holding at $UPPER% (Current: $PCT%, NCR: $NCR)"
     fi
 fi
 
@@ -48,5 +57,16 @@ if [ -z "$FAIL_REASON" ]; then
     echo "[PASS] all self-maintenance checks"
 else
     echo "[FAIL] $FAIL_REASON"
-    /Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier -title "BattOpt Alert" -message "$FAIL_REASON"
+
+    ALERT_FLAG="$DASH/.maint_alerted"
+    ALERT_COOLDOWN=3600
+    NOW=$(date +%s)
+    LAST_ALERT=$(cat "$ALERT_FLAG" 2>/dev/null || echo 0)
+
+    if [ $((NOW - LAST_ALERT)) -gt "$ALERT_COOLDOWN" ]; then
+        /Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier \
+            -title "BattOpt Alert" \
+            -message "$FAIL_REASON"
+        echo "$NOW" > "$ALERT_FLAG"
+    fi
 fi

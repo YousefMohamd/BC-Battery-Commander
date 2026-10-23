@@ -2,6 +2,10 @@
 LOG="$HOME/.battopt-swiftbar/actions.log"
 log() { echo "[$(date '+%H:%M:%S')] launch_swiftbar: $1" >> "$LOG"; }
 
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    exit 0
+fi
+
 if pgrep -x SwiftBar >/dev/null 2>&1; then
     log "already running"
     exit 0

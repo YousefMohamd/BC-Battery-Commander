@@ -448,10 +448,12 @@ echo "Reset to Defaults | bash=$DISPATCH param1=reset_defaults terminal=false re
 echo "---"
 
 echo "Charge Limits | size=11 color=#007AFF disabled=true"
+DISP_UPPER="${LAST_UPPER:-${UPPER:-80}}"
+DISP_LOWER="${LAST_LOWER:-${LOWER:-75}}"
 if [ "$ACTIVE_MODE" = "idle" ] || [ "$ACTIVE_MODE" = "hold" ]; then
-    echo "✓ Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
+    echo "✓ Custom Limit — ${DISP_UPPER}% / ${DISP_LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
 else
-    echo "Custom Limit — ${UPPER}% / ${LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
+    echo "Custom Limit — ${DISP_UPPER}% / ${DISP_LOWER}% | bash=$DISPATCH param1=limit_custom terminal=false refresh=true"
 fi
 
 echo "Remove Limit (hold at current) | bash=$DISPATCH param1=remove_limit_hold terminal=false refresh=true"
