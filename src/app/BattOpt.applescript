@@ -12,19 +12,23 @@ on idle
 end idle
 
 on quit
+    set homePath to POSIX path of (path to home folder)
+    set dispatchPath to homePath & ".battopt-swiftbar/dispatch.sh"
+    set logPath to homePath & ".battopt-swiftbar/actions.log"
+
+    set shutdownCommand to "/bin/bash " & ¬
+        quoted form of dispatchPath & " shutdown --force >> " & ¬
+        quoted form of logPath & " 2>&1 </dev/null"
+
     try
-        set homePath to POSIX path of (path to home folder)
-        set dispatchPath to homePath & ".battopt-swiftbar/dispatch.sh"
-        set logPath to homePath & ".battopt-swiftbar/actions.log"
-        
-        -- Detach shutdown from the applet before allowing the applet to quit.
-        set shutdownCommand to "/usr/bin/nohup /bin/bash " & ¬
-            quoted form of dispatchPath & " shutdown --force >> " & ¬
-            quoted form of logPath & " 2>&1 </dev/null &"
-            
         do shell script shutdownCommand
-        delay 0.2
+    on error errorMessage number errorNumber
+        try
+            do shell script "printf '%s\n' " & ¬
+                quoted form of ("AppleScript shutdown failed (" & errorNumber & "): " & errorMessage) & ¬
+                " >> " & quoted form of logPath
+        end try
     end try
-    
+
     continue quit
 end quit
