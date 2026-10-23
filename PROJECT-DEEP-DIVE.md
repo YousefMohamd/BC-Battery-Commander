@@ -163,3 +163,128 @@ We will not be held hostage by this license. The SMC (System Management Controll
 **MiniMax Feedback Applied:**
 - Added fallback for `.last_stable_config` in `dispatch.sh`.
 - Reviewed the `trap` logic and added a 1s delay to fix UI double-click glitches.
+
+---
+
+## Chapter 9: The Independence Plan — Reverse Engineering the SMC (v2.0 Roadmap)
+
+**Problem:**
+The current tool depends on `/usr/local/bin/battopt` — a **closed-source vendor binary** with a 30-day trial. When the trial expires (14 days from now), the SMC limits stop working and the tool loses its core function.
+
+**Why This is Unacceptable:**
+- No source code, no audit
+- 30-day lock-in, no perpetual license
+- Vendor could disappear or change pricing
+- Our entire investment in BattOpt-CC depends on this black box
+
+**The Solution: Write Our Own SMC Driver**
+
+The Apple SMC (System Management Controller) is accessible via IOKit (public API). Open-source projects like `smcutil`, `bclm`, and `smc-command` prove this is feasible on Intel Macs.
+
+**What We Need to Build:**
+
+1. **`src/powerwatch/smc_driver.c`** (new file, ~300 lines)
+   - Uses `IOKit/IOKitLib.h` to connect to `AppleSMC` service
+   - Uses `IOConnectCallStructMethod` with method ID 2
+   - SMC structs must match Apple's 80-byte layout exactly
+   - Functions:
+     - `smc_read_key(key)` — read a 4-byte key value
+     - `smc_write_key(key, value)` — write to a 4-byte key
+     - `smc_set_charge_limit(upper, lower)` — write `CH0B` and `CH0C`
+     - `smc_set_charging_inhibit(state)` — write `CH0I` (0=enable, 1=inhibit)
+   - Types to support: `ui8` (0-100) and `fpe2` (fixed-point)
+
+2. **SMC Keys to Implement:**
+   - `CH0B` — Upper charge limit (0-100)
+   - `CH0C` — Lower charge limit (0-100)
+   - `CH0I` — Charging inhibit (1 = stop charging)
+   - `CH0J` — Alternate inhibit key (some models)
+   - `AC-W` — AC connected status (read-only)
+   - `B0AC` — Battery AC status (read-only)
+
+3. **Installation Changes:**
+   - `install.sh` must compile `smc_driver.c` with:
+     ```bash
+     clang -O2 -framework IOKit -framework CoreFoundation -o smc_driver smc_driver.c
+
+    Deploy to /usr/local/bin/battopt-driver (new binary, no vendor)
+
+    Update src/sudoers/battopt to grant NOPASSWD for the new binary
+
+    Deprecate /usr/local/bin/battopt (vendor binary)
+
+    Dispatch Changes:
+
+        dispatch.sh must call /usr/local/bin/battopt-driver instead of /usr/local/bin/battopt
+
+        All references to battopt status replaced with battopt-driver status
+
+        All references to battopt limit replaced with battopt-driver limit
+
+        All references to battopt charge replaced with battopt-driver charge start/stop
+
+    Testing Plan:
+
+        Test on a live MacBookPro9,1 (our current hardware)
+
+        Verify with ioreg -rn AppleSmartBattery | grep NotChargingReason (should be 14 when holding)
+
+        Compare behavior to vendor binary for 7 days before switching fully
+
+Tools We Have:
+
+    Ghidra (NSA's reverse engineering tool) — for analyzing the vendor binary if needed
+
+    REA (Reverse Engineering Assistant) — for static analysis
+
+    Clang — for compiling our C driver
+
+    IOKit headers — public API
+
+Risks & Mitigations:
+
+    Risk: SMC keys differ between Mac models → Mitigation: Add a fallback table of known keys
+
+    Risk: Wrong write value could brick the battery → Mitigation: Read-before-write, validate ranges
+
+    Risk: Apple updates macOS to break IOKit access → Mitigation: Test on Catalina only (our target OS)
+
+Timeline:
+
+    Phase 1: Research and write smc_driver.c (~2-3 hours with strong AI)
+
+    Phase 2: Test on real hardware (~1 day)
+
+    Phase 3: Integrate with dispatch.sh and sudoers (~2 hours)
+
+    Phase 4: Full 7-day parallel test with vendor binary (~7 days)
+
+    Phase 5: Switch fully to our driver, remove vendor dependency
+
+Success Criteria:
+
+    ✅ sudo battopt-driver limit 85 80 returns "upper limit 85, lower limit 80" via ioreg
+
+    ✅ sudo battopt-driver stop sets NCR=14
+
+    ✅ sudo battopt-driver start sets NCR=0
+
+    ✅ No dependency on /usr/local/bin/battopt (can be uninstalled)
+
+    ✅ All existing features work (Hold, Sailing, Calibration, Smart Discharge)
+
+Chapter 10: Documentation Files Index
+
+The project maintains the following documentation files:
+File	Purpose	When to Read
+PROJECT-DEEP-DIVE.md	This file — Full technical narrative, battle log, architecture, decisions	When onboarding or making major decisions
+KNOWN-ISSUES.md	8 confirmed bugs with root cause analysis and proposed fixes	Before starting any bug fix session
+FINAL-REPORT.md	Original project completion summary (2026-10-22)	When reviewing project history
+ASTRA-AUDIT-2026-10-21.md	Full technical audit by GPT-6 Astra (30 findings)	Before making architectural changes
+README.md	User-facing documentation, installation guide	For new users
+CHANGELOG.md	Version history following Keep a Changelog format	When bumping versions
+FUTURE_DEVELOPMENT.md	Long-term roadmap and research notes	When planning v2.0+
+ROADMAP.md	Milestones v1.5 → v3.0	When planning releases
+
+Golden Rule: Never make changes to dispatch.sh, battopt.10s.sh, or BattOpt-launcher.sh without reading KNOWN-ISSUES.md first. Every bug in that file was discovered the hard way.
+
