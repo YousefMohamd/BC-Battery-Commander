@@ -104,10 +104,30 @@ case "$SESSION_MODE" in
         fi
         ;;
     discharge)
-        echo "discharge" > "$DASH/.active_mode"
-        # CRITICAL FIX: Apply the limit FIRST to prevent charging to 100% after discharge
-        sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1 &
-        sudo -n "$BAT" discharge "$LAST_UPPER" >/dev/null 2>&1 &
+        if ! wait_for_daemon; then
+            log "ERROR: discharge restore skipped — daemon did not become ready"
+            echo "idle" > "$DASH/.active_mode"
+        else
+            echo "discharge" > "$DASH/.active_mode"
+            if ! sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1; then
+                log "ERROR: discharge restore failed to set limit $LAST_UPPER/$LAST_LOWER"
+                echo "idle" > "$DASH/.active_mode"
+            else
+                VERIFY_UPPER=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+                if [ "$VERIFY_UPPER" != "$LAST_UPPER" ]; then
+                    sleep 2
+                    sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1
+                    VERIFY_UPPER=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+                fi
+                if [ "$VERIFY_UPPER" != "$LAST_UPPER" ]; then
+                    log "ERROR: discharge restore verified SMC=$VERIFY_UPPER expected=$LAST_UPPER"
+                    echo "idle" > "$DASH/.active_mode"
+                else
+                    log "discharge restore: limit verified $LAST_UPPER/$LAST_LOWER"
+                    sudo -n "$BAT" discharge "$LAST_UPPER" >> "$LOG" 2>&1
+                fi
+            fi
+        fi
         ;;
     *)
         log "unknown saved session mode: ${SESSION_MODE:-missing}; no battery operation started"

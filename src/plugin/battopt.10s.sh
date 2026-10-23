@@ -300,7 +300,9 @@ else
     STATE_COLOR="color=#E8A0A0"
 fi
 
-if [ -n "$TEMP_INT" ] && [ "$TEMP_INT" -ge 42 ] 2>/dev/null; then
+if [ "$ACTIVE_MODE" = "discharge" ]; then
+    FINAL_COLOR="color=#8A9AAB"
+elif [ -n "$TEMP_INT" ] && [ "$TEMP_INT" -ge 42 ] 2>/dev/null; then
     FINAL_COLOR="color=#FF3B30"
 elif [ -n "$TEMP_INT" ] && [ "$TEMP_INT" -ge 38 ] 2>/dev/null; then
     FINAL_COLOR="color=#FF9500"

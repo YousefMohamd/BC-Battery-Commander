@@ -176,6 +176,8 @@ sudo visudo -cf "$SUDOERS_DST"
 # 10. Reload user agents
 for plist in "$AGENT_DIR"/com.battopt.*.plist; do
     [ -f "$plist" ] || continue
+    label=$(basename "$plist" .plist)
+    launchctl enable "gui/$(id -u)/$label" 2>/dev/null || true
     launchctl unload -w "$plist" 2>/dev/null || true
     launchctl load -w "$plist"
 done
