@@ -1,26 +1,23 @@
 #!/bin/bash
-# SwiftBar Launcher — respects .paused state
-
 LOG="$HOME/.battopt-swiftbar/actions.log"
+log() { echo "[$(date '+%H:%M:%S')] launch_swiftbar: $1" >> "$LOG"; }
 
-# Clear SwiftBar's DisabledPlugins cache (SwiftBar bug workaround)
+if pgrep -x SwiftBar >/dev/null 2>&1; then
+    log "already running"
+    exit 0
+fi
+
+# Clear any disabled plugin cache (SwiftBar bug workaround)
 defaults delete com.ameba.SwiftBar DisabledPlugins 2>/dev/null
 
-# Launch or ensure SwiftBar
-if pgrep -x SwiftBar >/dev/null 2>&1; then
-    # Already running — just make sure plugin is enabled
-    exit 0
+# Use LaunchServices (open -a) — the only reliable method on Catalina from background
+if open -a SwiftBar 2>/dev/null; then
+    sleep 3
+    if pgrep -x SwiftBar >/dev/null 2>&1; then
+        log "launched via open -a"
+        exit 0
+    fi
 fi
 
-nohup /Applications/SwiftBar.app/Contents/MacOS/SwiftBar > /dev/null 2>&1 &
-disown
-sleep 3
-
-# Verify
-if pgrep -x SwiftBar >/dev/null 2>&1; then
-    echo "[$(date '+%H:%M:%S')] launch_swiftbar: SwiftBar launched" >> "$LOG"
-    exit 0
-else
-    echo "[$(date '+%H:%M:%S')] launch_swiftbar: FAILED to launch" >> "$LOG"
-    exit 1
-fi
+log "FAILED to launch SwiftBar"
+exit 1

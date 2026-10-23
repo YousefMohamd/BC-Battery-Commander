@@ -11,6 +11,22 @@ mkdir -p "$DASH" "$PLUGIN_DIR"
 
 log() { echo "[$(date '+%H:%M:%S')] BattOpt.app: $1" >> "$LOG"; }
 
+
+# Wait for battopt daemon to respond (up to 15s)
+wait_for_daemon() {
+    local waited=0
+    while [ "$waited" -lt 15 ]; do
+        if sudo -n "$BAT" status >/dev/null 2>&1; then
+            log "daemon ready after ${waited}s"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    log "WARN: daemon not ready after 15s"
+    return 1
+}
+
 log "=== LAUNCH START ==="
 START_TIME=$(date +%s)
 
@@ -79,17 +95,28 @@ fi
 
 case "$SESSION_MODE" in
     hold|idle)
+        wait_for_daemon
         echo "$SESSION_MODE" > "$DASH/.active_mode"
-        sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1 &
+        if sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1; then
+            log "restored ${SESSION_MODE}: limit $LAST_UPPER/$LAST_LOWER"
+        else
+            log "WARN: ${SESSION_MODE}: limit FAILED $LAST_UPPER/$LAST_LOWER"
+        fi
         ;;
     discharge)
         echo "discharge" > "$DASH/.active_mode"
+        # CRITICAL FIX: Apply the limit FIRST to prevent charging to 100% after discharge
+        sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1 &
         sudo -n "$BAT" discharge "$LAST_UPPER" >/dev/null 2>&1 &
         ;;
     *)
         log "unknown saved session mode: ${SESSION_MODE:-missing}; no battery operation started"
         ;;
 esac
+
+# Refresh UI after applying limits
+sleep 2
+touch "$PLUGIN_DIR/battopt.10s.sh"
 
 # 7. Launch SwiftBar
 if ! pgrep -x SwiftBar >/dev/null 2>&1; then

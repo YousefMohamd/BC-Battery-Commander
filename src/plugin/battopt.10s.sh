@@ -191,6 +191,13 @@ ICON_MAXCAP=$(echo "$IOREG_DATA" | grep -oE '"MaxCapacity" = [0-9]+' | awk '{pri
 [ -z "$ICON_CHCUR" ] && ICON_CHCUR=0
 [ -z "$ICON_NCR" ] && ICON_NCR=0
 
+# Hardware-first: if hardware is in hold state, override stale active_mode
+if [ "$ICON_NCR" = "14" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
+    ACTIVE_MODE="hold"
+elif [ "$ACTIVE_MODE" = "discharge" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
+    ACTIVE_MODE="hold"
+fi
+
 case "$ACTIVE_MODE" in
     hold)        ICON="🔌" ;;
     charge_full) ICON="⚡" ;;

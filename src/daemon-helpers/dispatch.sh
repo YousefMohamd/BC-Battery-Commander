@@ -988,7 +988,8 @@ AS
 
     shutdown)
         acquire
-        CONFIRM=$(osascript <<'AS'
+        if [ "$2" != "--force" ]; then
+            CONFIRM=$(osascript <<'AS'
 try
     set d to display dialog "Shut Down BattOpt?\n\nThis will stop all agents, release battery limit,\nand remove the menu bar icon." buttons {"Cancel", "Shut Down"} default button "Shut Down" with icon caution with title "BattOpt - Shutdown"
     return button returned of d
@@ -998,6 +999,7 @@ end try
 AS
 )
         [ "$CONFIRM" != "Shut Down" ] && { release; exit 0; }
+        fi
         log "shutdown: START"
         START_TS=$(date +%s)
 
