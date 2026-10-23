@@ -1,4 +1,5 @@
 -- BattOpt Application Wrapper
+
 on run
     try
         set launcherPath to POSIX path of (path to resource "BattOpt-launcher.sh" in bundle (path to me))
@@ -7,7 +8,7 @@ on run
 end run
 
 on idle
-    -- Keep the app running in the background indefinitely
+    -- Keep the app running in the background indefinitely.
     return 60
 end idle
 

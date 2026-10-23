@@ -1,4 +1,5 @@
 #!/bin/bash
+# build-app.sh
 
 set -u
 
@@ -13,9 +14,13 @@ TEST=0
 BUILD_OK=0
 ICON_OK=0
 BACKUP_PATH=""
-ICON_SOURCE=""
 
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+cleanup() {
+    [ -d "$TMP_APP" ] && rm -rf "$TMP_APP"
+}
+trap cleanup EXIT
 
 usage() {
     echo "Usage: $0 [--install] [--test]"
@@ -74,6 +79,41 @@ find_icon() {
     return 1
 }
 
+verify_mach_o() {
+    local app_path="$1"
+    local applet="$app_path/Contents/MacOS/applet"
+    local file_output=""
+
+    [ -f "$applet" ] || {
+        echo "FAIL: missing applet executable: $applet"
+        return 1
+    }
+
+    file_output=$(file "$applet" 2>&1)
+    echo "$file_output"
+
+    if echo "$file_output" | grep -q "Mach-O"; then
+        echo "PASS: applet is a Mach-O binary"
+        return 0
+    fi
+
+    echo "FAIL: applet is not a Mach-O binary"
+    return 1
+}
+
+verify_launcher() {
+    local app_path="$1"
+    local launcher="$app_path/Contents/Resources/BattOpt-launcher.sh"
+
+    if [ -f "$launcher" ] && [ -x "$launcher" ]; then
+        echo "PASS: BattOpt-launcher.sh is present and executable"
+        return 0
+    fi
+
+    echo "FAIL: missing or non-executable launcher: $launcher"
+    return 1
+}
+
 verify_app() {
     local path="$1"
     local file_output=""
@@ -90,23 +130,15 @@ verify_app() {
     echo "=== BattOpt.app Verification ==="
     echo "App path: $path"
 
-    if [ -x "$path/Contents/MacOS/applet" ]; then
-        file_output=$(file "$path/Contents/MacOS/applet" 2>&1)
-        echo "$file_output"
-        if echo "$file_output" | grep -q "Mach-O"; then
-            file_ok=1
-            echo "PASS: executable is Mach-O"
-        else
-            echo "FAIL: executable is not Mach-O"
-        fi
-    else
-        echo "FAIL: missing executable: $path/Contents/MacOS/applet"
+    if verify_mach_o "$path"; then
+        file_ok=1
     fi
 
-    if [ -f "$path/Contents/Info.plist" ]; then
+    local plist="$path/Contents/Info.plist"
+    if [ -f "$plist" ]; then
         executable_value=$(
             /usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" \
-                "$path/Contents/Info.plist" 2>/dev/null || true
+                "$plist" 2>/dev/null || true
         )
         if [ "$executable_value" = "applet" ]; then
             plist_ok=1
@@ -117,7 +149,7 @@ verify_app() {
 
         bundle_identifier=$(
             /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
-                "$path/Contents/Info.plist" 2>/dev/null || true
+                "$plist" 2>/dev/null || true
         )
         if [ "$bundle_identifier" = "com.yousef.battopt.launcher" ]; then
             identifier_ok=1
@@ -128,7 +160,7 @@ verify_app() {
 
         lsui_element=$(
             /usr/libexec/PlistBuddy -c "Print :LSUIElement" \
-                "$path/Contents/Info.plist" 2>/dev/null || true
+                "$plist" 2>/dev/null || true
         )
         if [ "$lsui_element" = "true" ]; then
             lsui_ok=1
@@ -137,20 +169,17 @@ verify_app() {
             echo "FAIL: LSUIElement is ${lsui_element:-missing}, expected true"
         fi
     else
-        echo "FAIL: missing Info.plist: $path/Contents/Info.plist"
+        echo "FAIL: missing Info.plist: $plist"
     fi
 
     if [ -f "$path/Contents/Resources/battopt.icns" ]; then
         echo "PASS: battopt.icns is present"
     else
-        echo "SKIP: icon not present (optional)"
+        echo "SKIP: icon is not present (optional)"
     fi
 
-    if [ -x "$path/Contents/Resources/BattOpt-launcher.sh" ]; then
+    if verify_launcher "$path"; then
         launcher_ok=1
-        echo "PASS: BattOpt-launcher.sh is present and executable"
-    else
-        echo "FAIL: missing or non-executable launcher: $path/Contents/Resources/BattOpt-launcher.sh"
     fi
 
     echo "Code-signing status:"
@@ -184,36 +213,42 @@ register_app() {
 
 if [ ! -f "$APPLE_SCRIPT" ]; then
     echo "FAIL: AppleScript source not found: $APPLE_SCRIPT"
-elif [ ! -f "$LAUNCHER_SCRIPT" ]; then
+    exit 1
+fi
+
+if [ ! -f "$LAUNCHER_SCRIPT" ]; then
     echo "FAIL: launcher source not found: $LAUNCHER_SCRIPT"
-else
-    rm -rf "$TMP_APP"
+    exit 1
+fi
 
-    if osacompile -s -o "$TMP_APP" "$APPLE_SCRIPT"; then
-        if cp "$LAUNCHER_SCRIPT" "$TMP_APP/Contents/Resources/BattOpt-launcher.sh" && chmod 755 "$TMP_APP/Contents/Resources/BattOpt-launcher.sh"; then
-            if find_icon; then
-                if cp "$ICON_SOURCE" "$TMP_APP/Contents/Resources/battopt.icns"; then
-                    ICON_OK=1
-                    echo "Icon copied: $ICON_SOURCE"
-                else
-                    echo "WARN: could not copy icon from $ICON_SOURCE (continuing without icon)"
-                fi
-            else
-                echo "WARN: no icon found, continuing without icon"
-            fi
+rm -rf "$TMP_APP"
 
-            if configure_bundle "$TMP_APP"; then
-                BUILD_OK=1
-                echo "Build completed: $TMP_APP"
+if osacompile -s -o "$TMP_APP" "$APPLE_SCRIPT"; then
+    if cp "$LAUNCHER_SCRIPT" "$TMP_APP/Contents/Resources/BattOpt-launcher.sh" &&
+        chmod 755 "$TMP_APP/Contents/Resources/BattOpt-launcher.sh"; then
+
+        if find_icon; then
+            if cp "$ICON_SOURCE" "$TMP_APP/Contents/Resources/battopt.icns"; then
+                ICON_OK=1
+                echo "Icon copied: $ICON_SOURCE"
             else
-                echo "FAIL: could not configure app bundle metadata"
+                echo "WARN: could not copy icon from $ICON_SOURCE; continuing without it"
             fi
         else
-            echo "FAIL: could not add launcher to app resources"
+            echo "WARN: icon not found; continuing without it"
+        fi
+
+        if configure_bundle "$TMP_APP"; then
+            BUILD_OK=1
+            echo "Build completed: $TMP_APP"
+        else
+            echo "FAIL: could not configure app bundle metadata"
         fi
     else
-        echo "FAIL: osacompile failed"
+        echo "FAIL: could not add launcher to app resources"
     fi
+else
+    echo "FAIL: osacompile failed"
 fi
 
 if [ "$BUILD_OK" -eq 1 ]; then
@@ -225,11 +260,18 @@ fi
 
 if [ "$INSTALL" -eq 1 ] && [ "$BUILD_OK" -eq 1 ]; then
     BACKUP_PATH="/Applications/BattOpt.app.backup-$(date +%Y%m%d-%H%M%S)"
+    BACKUP_SUFFIX=1
+
+    while [ -e "$BACKUP_PATH" ]; do
+        BACKUP_PATH="/Applications/BattOpt.app.backup-$(date +%Y%m%d-%H%M%S)-${BACKUP_SUFFIX}"
+        BACKUP_SUFFIX=$((BACKUP_SUFFIX + 1))
+    done
 
     if [ -e "$INSTALL_APP" ]; then
         echo "Backing up existing app to: $BACKUP_PATH"
+
         if ! sudo mv "$INSTALL_APP" "$BACKUP_PATH"; then
-            echo "FAIL: could not back up existing app"
+            echo "FAIL: could not move existing app to backup"
             BUILD_OK=0
         fi
     fi
@@ -239,7 +281,17 @@ if [ "$INSTALL" -eq 1 ] && [ "$BUILD_OK" -eq 1 ]; then
             APP_PATH="$INSTALL_APP"
             echo "Installed app: $APP_PATH"
 
-            if ! register_app "$INSTALL_APP"; then
+            if ! verify_mach_o "$INSTALL_APP"; then
+                echo "FAIL: installed applet is not a Mach-O binary"
+                BUILD_OK=0
+            fi
+
+            if ! verify_launcher "$INSTALL_APP"; then
+                echo "FAIL: installed launcher is missing or not executable"
+                BUILD_OK=0
+            fi
+
+            if [ "$BUILD_OK" -eq 1 ] && ! register_app "$INSTALL_APP"; then
                 BUILD_OK=0
             fi
         else
@@ -252,6 +304,7 @@ fi
 if [ "$TEST" -eq 1 ]; then
     echo
     echo "Test mode: temporary app retained at $TMP_APP"
+    trap - EXIT
 fi
 
 echo
@@ -263,8 +316,12 @@ else
     BUILD_OK=0
 fi
 
-if [ "$INSTALL" -eq 1 ] && [ -n "$BACKUP_PATH" ]; then
+if [ "$INSTALL" -eq 1 ] && [ -n "$BACKUP_PATH" ] && [ -d "$BACKUP_PATH" ]; then
     echo "Backup path: $BACKUP_PATH"
 fi
 
-exit $([ "$BUILD_OK" -eq 1 ] && echo 0 || echo 1)
+if [ "$BUILD_OK" -eq 1 ]; then
+    exit 0
+fi
+
+exit 1
