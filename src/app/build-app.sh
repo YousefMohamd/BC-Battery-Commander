@@ -189,7 +189,7 @@ elif [ ! -f "$LAUNCHER_SCRIPT" ]; then
 else
     rm -rf "$TMP_APP"
 
-    if osacompile -o "$TMP_APP" "$APPLE_SCRIPT"; then
+    if osacompile -s -o "$TMP_APP" "$APPLE_SCRIPT"; then
         if cp "$LAUNCHER_SCRIPT" "$TMP_APP/Contents/Resources/BattOpt-launcher.sh" && chmod 755 "$TMP_APP/Contents/Resources/BattOpt-launcher.sh"; then
             if find_icon; then
                 if cp "$ICON_SOURCE" "$TMP_APP/Contents/Resources/battopt.icns"; then
