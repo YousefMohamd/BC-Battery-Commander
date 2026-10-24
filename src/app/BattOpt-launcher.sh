@@ -72,18 +72,20 @@ valid_limit() {
     [ "$1" -ge 20 ] && [ "$1" -le 100 ]
 }
 
-if [ -f "$LAST_SESSION" ]; then
-    SESSION_MODE=$(grep '^ACTIVE_MODE=' "$LAST_SESSION" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')
-    LAST_UPPER=$(grep '^LAST_UPPER=' "$LAST_SESSION" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')
-    LAST_LOWER=$(grep '^LAST_LOWER=' "$LAST_SESSION" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')
-else
-    SESSION_MODE="idle"
+# AUTHORITY: ~/.battopt-swiftbar/config holds the user's deliberate limits.
+# dispatch.sh writes it via save_cfg() on every intentional change
+# (limit_custom, smart_discharge, sail_on/off/gap, disable_limit).
+# .last_session_mode is written only by dispatch.sh's shutdown handler, so it
+# is a shutdown-time snapshot and can diverge from live intent.
+# Source config first; read .last_session_mode only for ACTIVE_MODE logging.
+if [ -f "$DASH/config" ]; then
+    source "$DASH/config"
 fi
 
-if ! valid_limit "$LAST_UPPER" || ! valid_limit "$LAST_LOWER"; then
-    if [ -f "$DASH/config" ]; then
-        source "$DASH/config"
-    fi
+if [ -f "$LAST_SESSION" ]; then
+    SESSION_MODE=$(grep '^ACTIVE_MODE=' "$LAST_SESSION" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '[:space:]')
+else
+    SESSION_MODE="idle"
 fi
 
 if ! valid_limit "$LAST_UPPER"; then
@@ -94,7 +96,7 @@ if ! valid_limit "$LAST_LOWER"; then
 fi
 
 # === RECONCILER: Determine correct state from hardware ===
-log "saved session mode: ${SESSION_MODE:-none} (reconciling against hardware)"
+log "config limits: ${LAST_UPPER}/${LAST_LOWER} (authoritative); last_session mode: ${SESSION_MODE:-none}"
 wait_for_daemon
 
 # Get current battery % from hardware (not daemon status, to avoid daemon delays)
@@ -116,13 +118,6 @@ if [ -z "$CURRENT_PCT" ]; then
     log "WARN: could not read battery %; applying limits only"
     echo "hold" > "$DASH/.active_mode"
 
-elif [ "$CURRENT_PCT" -gt "$LAST_UPPER" ]; then
-    # Above upper limit → discharge to LAST_UPPER
-    echo "discharge" > "$DASH/.active_mode"
-    log "Reconciler: PCT=${CURRENT_PCT}% > UPPER=${LAST_UPPER}% — starting discharge"
-    nohup sudo -n "$BAT" discharge "$LAST_UPPER" >/dev/null 2>&1 &
-    disown
-
 elif [ "$CURRENT_PCT" -lt "$LAST_LOWER" ]; then
     # Below lower limit → charge to LAST_UPPER
     echo "charge_full" > "$DASH/.active_mode"
@@ -131,9 +126,12 @@ elif [ "$CURRENT_PCT" -lt "$LAST_LOWER" ]; then
     disown
 
 else
-    # Within limits → just hold
+    # At or above lower bound → hold. The SMC upper limit set above prevents
+    # further charging; natural drain brings a battery above upper back into
+    # the band. Launch must never actively discharge — that is an explicit
+    # user action (smart_discharge) per BattOpt design.
     echo "hold" > "$DASH/.active_mode"
-    log "Reconciler: PCT=${CURRENT_PCT}% within ${LAST_LOWER}–${LAST_UPPER}% — holding"
+    log "Reconciler: PCT=${CURRENT_PCT}% ≥ LOWER=${LAST_LOWER}% — holding (no discharge)"
 fi
 
 # Verify SMC took the limit
