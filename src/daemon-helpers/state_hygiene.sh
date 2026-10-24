@@ -10,6 +10,29 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG"; }
 
 CLEANED=0
 
+# ─── Lock probe ───
+# .state_guard.lock is a directory with a `pid` file (see state_guard.sh).
+# .op.lock is a file written by dispatch.sh `acquire` during intent_apply.
+# If either is held by a live PID we must NOT mutate session / mode state:
+# dispatch.sh may be mid-transition (write .sd_session, spawn discharge,
+# clear token) and cleaning here would orphan the operation (H2/H3).
+guard_is_locked() {
+    local pid
+    if [ -d "$DASH/.state_guard.lock" ]; then
+        pid=$(cat "$DASH/.state_guard.lock/pid" 2>/dev/null)
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    if [ -f "$DASH/.op.lock" ]; then
+        pid=$(cat "$DASH/.op.lock" 2>/dev/null | tr -d '[:space:]')
+        if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # ─── 1. Hold state consistency ───
 HAS_OVERRIDE=0
 HAS_TOKEN=0
@@ -21,8 +44,6 @@ HAS_PREHOLD=0
 
 # If override is present but token is missing → orphaned hold
 if [ "$HAS_OVERRIDE" = "1" ] && [ "$HAS_TOKEN" = "0" ]; then
-    # Could be old hold that finished; but if no discharge and
-    # config already reflects the hold → safe to clear override
     log "hygiene: orphaned .hold_override (no token) → cleaning"
     rm -f "$DASH/.hold_override"
     CLEANED=$((CLEANED + 1))
@@ -43,9 +64,13 @@ if [ "$HAS_PREHOLD" = "1" ] && [ "$HAS_OVERRIDE" = "0" ]; then
 fi
 
 # ─── 2. Session file — should match a running discharge ───
+# H2: skip when dispatch.sh holds a lock. intent_apply writes .sd_session
+# and then spawns the discharge process; if we tick between those two
+# steps without this check, we orphan the discharge from its watcher.
 if [ -f "$DASH/.sd_session" ]; then
-    if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
-        # No discharge running
+    if guard_is_locked; then
+        log "hygiene: lock held — deferring .sd_session cleanup"
+    elif ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
         SES=$(cat "$DASH/.sd_session" 2>/dev/null | tr -d '[:space:]')
         if [ -n "$SES" ]; then
             log "hygiene: stale .sd_session ($SES) — no discharge process"
@@ -125,28 +150,72 @@ if [ -f "$LOG" ]; then
 fi
 
 
-# ─── 8. Active mode — reset if underlying process is gone ───
+# ─── 8. Active mode — reset if underlying state is genuinely stale ───
+# H1: A hold is legitimate whenever the SMC upper limit matches the saved
+# config. guardian.sh LAYER3a creates 'hold' without .hold_override, so
+# the old "no override → idle" rule fought LAYER3a on every tick and
+# produced the hold↔idle↔discharge oscillation. Compare SMC to config
+# instead. When the daemon is unreachable, preserve hold so guardian
+# LAYER3 (drift) and LAYER8 (watchdog) can resolve it.
+# H3: when a session ends and no discharge/charge/calibration process is
+# running, drop the orphan .active_token. Without this, the token is
+# stuck until the next dispatch.sh intent_apply.
 if [ -f "$DASH/.active_mode" ]; then
-    AM=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
-    case "$AM" in
-        hold)
-            # Hold without override → stale
-            if [ ! -f "$DASH/.hold_override" ]; then
-                log "hygiene: stale active_mode=hold → idle"
-                echo "idle" > "$DASH/.active_mode"
-                CLEANED=$((CLEANED + 1))
-            fi
-            ;;
-        charge_full|discharge|calibration)
-            # Process should be running
-            if ! pgrep -f "battopt $AM" >/dev/null 2>&1 && \
-               ! pgrep -f "battopt $([ "$AM" = "charge_full" ] && echo charge || echo $AM)" >/dev/null 2>&1; then
-                log "hygiene: stale active_mode=$AM (no process) → idle"
-                echo "idle" > "$DASH/.active_mode"
-                CLEANED=$((CLEANED + 1))
-            fi
-            ;;
-    esac
+    if guard_is_locked; then
+        log "hygiene: lock held — deferring .active_mode cleanup"
+    else
+        AM=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
+        case "$AM" in
+            hold)
+                if [ -f "$DASH/.hold_override" ]; then
+                    : # explicit hold — keep
+                else
+                    SMC_UP=$(sudo -n /usr/local/bin/battopt status 2>/dev/null \
+                        | grep -oE 'upper limit [0-9]+' \
+                        | grep -oE '[0-9]+' | head -1)
+                    WANT_UP=85
+                    [ -f "$DASH/config" ] && source "$DASH/config" 2>/dev/null
+                    WANT_UP="${LAST_UPPER:-85}"
+                    if [ -z "$SMC_UP" ]; then
+                        : # daemon down — leave hold; guardian LAYER8/LAYER3 resolves
+                    elif [ "$SMC_UP" = "$WANT_UP" ]; then
+                        : # SMC matches config — legitimate hold, keep
+                    else
+                        log "hygiene: stale active_mode=hold (SMC=$SMC_UP cfg=$WANT_UP) → idle"
+                        echo "idle" > "$DASH/.active_mode"
+                        CLEANED=$((CLEANED + 1))
+                    fi
+                fi
+                ;;
+            charge_full|discharge|calibration)
+                PROC_PAT="battopt $AM"
+                [ "$AM" = "charge_full" ] && PROC_PAT="battopt charge"
+                if ! pgrep -f "$PROC_PAT" >/dev/null 2>&1; then
+                    log "hygiene: stale active_mode=$AM (no process) → idle"
+                    echo "idle" > "$DASH/.active_mode"
+                    # H3: no process, no session owner — token is orphaned.
+                    if [ ! -f "$DASH/.sd_session" ] && [ -s "$DASH/.active_token" ]; then
+                        log "hygiene: orphan .active_token (mode=$AM, no process) → cleaned"
+                        rm -f "$DASH/.active_token"
+                        CLEANED=$((CLEANED + 1))
+                    fi
+                    CLEANED=$((CLEANED + 1))
+                fi
+                ;;
+            *)
+                # Idle or unknown — defensively clear a leftover token.
+                if [ -s "$DASH/.active_token" ]; then
+                    if ! pgrep -f "battopt discharge" >/dev/null 2>&1 \
+                       && ! pgrep -f "battopt charge"    >/dev/null 2>&1 \
+                       && ! pgrep -f "battopt calibrate" >/dev/null 2>&1; then
+                        log "hygiene: orphan .active_token (mode=${AM:-idle}) → cleaned"
+                        rm -f "$DASH/.active_token"
+                        CLEANED=$((CLEANED + 1))
+                    fi
+                fi
+                ;;
+        esac
+    fi
 fi
 
 log "hygiene: run complete, cleaned=$CLEANED"
