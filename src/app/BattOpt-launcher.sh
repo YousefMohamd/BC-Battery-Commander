@@ -93,46 +93,56 @@ if ! valid_limit "$LAST_LOWER"; then
     LAST_LOWER=80
 fi
 
-case "$SESSION_MODE" in
-    hold|idle)
-        wait_for_daemon
-        echo "$SESSION_MODE" > "$DASH/.active_mode"
-        if sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1; then
-            log "restored ${SESSION_MODE}: limit $LAST_UPPER/$LAST_LOWER"
-        else
-            log "WARN: ${SESSION_MODE}: limit FAILED $LAST_UPPER/$LAST_LOWER"
-        fi
-        ;;
-    discharge)
-        if ! wait_for_daemon; then
-            log "ERROR: discharge restore skipped — daemon did not become ready"
-            echo "idle" > "$DASH/.active_mode"
-        else
-            echo "discharge" > "$DASH/.active_mode"
-            if ! sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1; then
-                log "ERROR: discharge restore failed to set limit $LAST_UPPER/$LAST_LOWER"
-                echo "idle" > "$DASH/.active_mode"
-            else
-                VERIFY_UPPER=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
-                if [ "$VERIFY_UPPER" != "$LAST_UPPER" ]; then
-                    sleep 2
-                    sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1
-                    VERIFY_UPPER=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
-                fi
-                if [ "$VERIFY_UPPER" != "$LAST_UPPER" ]; then
-                    log "ERROR: discharge restore verified SMC=$VERIFY_UPPER expected=$LAST_UPPER"
-                    echo "idle" > "$DASH/.active_mode"
-                else
-                    log "discharge restore: limit verified $LAST_UPPER/$LAST_LOWER"
-                    sudo -n "$BAT" discharge "$LAST_UPPER" >> "$LOG" 2>&1
-                fi
-            fi
-        fi
-        ;;
-    *)
-        log "unknown saved session mode: ${SESSION_MODE:-missing}; no battery operation started"
-        ;;
-esac
+# === RECONCILER: Determine correct state from hardware ===
+log "saved session mode: ${SESSION_MODE:-none} (reconciling against hardware)"
+wait_for_daemon
+
+# Get current battery % from hardware (not daemon status, to avoid daemon delays)
+BATT_IOREG=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+CUR_CAP=$(echo "$BATT_IOREG" | grep -oE '"CurrentCapacity" = [0-9]+' | awk '{print $3}')
+MAX_CAP=$(echo "$BATT_IOREG" | grep -oE '"MaxCapacity" = [0-9]+' | awk '{print $3}')
+
+if [ -n "$CUR_CAP" ] && [ -n "$MAX_CAP" ] && [ "$MAX_CAP" -gt 0 ] 2>/dev/null; then
+    CURRENT_PCT=$(( (CUR_CAP * 100 + MAX_CAP / 2) / MAX_CAP ))
+else
+    CURRENT_PCT=""
+fi
+
+# Always apply the saved limits first — prevents uncontrolled charging
+sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1
+
+if [ -z "$CURRENT_PCT" ]; then
+    # Can't read battery — apply limits only, stay safe
+    log "WARN: could not read battery %; applying limits only"
+    echo "hold" > "$DASH/.active_mode"
+
+elif [ "$CURRENT_PCT" -gt "$LAST_UPPER" ]; then
+    # Above upper limit → discharge to LAST_UPPER
+    echo "discharge" > "$DASH/.active_mode"
+    log "Reconciler: PCT=${CURRENT_PCT}% > UPPER=${LAST_UPPER}% — starting discharge"
+    nohup sudo -n "$BAT" discharge "$LAST_UPPER" >/dev/null 2>&1 &
+    disown
+
+elif [ "$CURRENT_PCT" -lt "$LAST_LOWER" ]; then
+    # Below lower limit → charge to LAST_UPPER
+    echo "charge_full" > "$DASH/.active_mode"
+    log "Reconciler: PCT=${CURRENT_PCT}% < LOWER=${LAST_LOWER}% — starting charge"
+    nohup sudo -n "$BAT" charge "$LAST_UPPER" >/dev/null 2>&1 &
+    disown
+
+else
+    # Within limits → just hold
+    echo "hold" > "$DASH/.active_mode"
+    log "Reconciler: PCT=${CURRENT_PCT}% within ${LAST_LOWER}–${LAST_UPPER}% — holding"
+fi
+
+# Verify SMC took the limit
+sleep 2
+VERIFY=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+if [ "$VERIFY" != "$LAST_UPPER" ]; then
+    log "WARN: SMC upper=$VERIFY expected=$LAST_UPPER — retrying"
+    sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1
+fi
 
 # Refresh UI after applying limits
 sleep 2
