@@ -93,34 +93,41 @@ if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ]; then
     # Check if discharge already running
     if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
         log "LAYER2: overshoot detected (PCT=$PCT > UPPER=$UPPER)"
-        
+
         # Create fresh session
         SD_ID=$(guard_session_begin discharge)
         [ -n "$SD_ID" ] || exit 0
         echo "$SD_ID" > "$SESSION_FILE"
-        
+
         # Start watcher
         nohup "$HOME/.battopt-swiftbar/sd_watcher.sh" \
             "$SD_ID" "$UPPER" "$LOWER" "$SESSION_FILE" "$LOG" "$BAT" \
             >/dev/null 2>&1 &
         disown
-        
-        # Start discharge
-        guarded || exit 0
+
+        # Start discharge.
+        # NOTE: do NOT gate on guarded() here — guard_session_begin() just set
+        # .active_mode=discharge, so guard_session_active() returns true and a
+        # guarded check would skip the discharge and leave a phantom session.
         nohup sudo -n "$BAT" discharge "$UPPER" >/dev/null 2>&1 &
         disown
-        
+
         sleep 2
-        
+
         if pgrep -f "battopt discharge" >/dev/null; then
             log "LAYER2: discharge started ($PCT% → $UPPER%)"
         else
             # Layer 12 (enforce_watchdog) handles repeated failures — reduce log noise
-if [ -f "$HOME/.battopt-swiftbar/.enforce_state" ]; then
-    : # silent — Layer 12 is on it
-else
-    log "LAYER2: discharge failed — applying limit only"
-fi
+            if [ -f "$HOME/.battopt-swiftbar/.enforce_state" ]; then
+                : # silent — Layer 12 is on it
+            else
+                log "LAYER2: discharge failed — clearing phantom session and applying limit only"
+            fi
+            # Roll back the phantom session we just created if it is still ours.
+            if [ "$(cat "$SESSION_FILE" 2>/dev/null)" = "$SD_ID" ]; then
+                rm -f "$SESSION_FILE" "$HOME/.battopt-swiftbar/.active_token"
+                echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
+            fi
             sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
         fi
     fi
@@ -129,15 +136,15 @@ fi
 # ═══════════════════════════════════════════════════════
 
 # === STOP DISCHARGE AT UPPER (Stage 22) ===
-# If discharging and battery <= UPPER, stop discharge and reapply limit
+# If discharging and battery <= UPPER, stop discharge and reapply limit.
+# NOTE: guarded() must not gate these calls — guard_session_active() returns
+# true for "discharge" and "hold", which are exactly the states this block
+# needs to reconcile.
 if pgrep -f "battopt discharge" >/dev/null 2>&1; then
     if [ -n "$PCT" ] && [ "$PCT" -le "$UPPER" ]; then
         log "L2b: discharge complete (PCT=$PCT <= UPPER=$UPPER) — stopping"
-        guarded || exit 0
         sudo pkill -9 -f "battopt discharge" 2>/dev/null
-        guarded || exit 0
         sudo -n "$BAT" discharge stop >/dev/null 2>&1
-        guarded || exit 0
         source "$HOME/.battopt-swiftbar/config" 2>/dev/null
         sudo -n "$BAT" limit "${LAST_UPPER:-85}" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
     fi
@@ -152,7 +159,10 @@ AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:
 [ -z "$AM_L3" ] && AM_L3=idle
 
 # LAYER 3a: Detect a silent hardware hold before checking limit drift.
-if [ "$NCR" = "14" ] && [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" = "$UPPER" ] && [ "$AM_L3" != "hold" ]; then
+# Only fire when no session is active — a live discharge / charge_full /
+# calibration will also briefly show NCR=14 during transitions, and we must
+# not overwrite its .active_mode.
+if [ "$NCR" = "14" ] && [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" = "$UPPER" ] && [ "$AM_L3" = "idle" ] && [ ! -f "$SESSION_FILE" ]; then
     log "LAYER3a: silent hold detected (NCR=14, SMC=$SMC_UPPER=cfg=$UPPER, mode=$AM_L3) — correcting"
     MODE_FILE="$HOME/.battopt-swiftbar/.active_mode"
     TMP="$MODE_FILE.tmp.$$"
@@ -217,6 +227,27 @@ if [ ! -f "$SESSION_FILE" ]; then
         log "LAYER4: orphan discharge (no session, mode=$AM_L4) — stopping"
         sudo pkill -9 -f "battopt discharge" 2>/dev/null
         sudo -n "$BAT" discharge stop >/dev/null 2>&1
+    fi
+fi
+
+# ═══════════════════════════════════════════════════════
+# LAYER 4b: Phantom session cleanup
+# ═══════════════════════════════════════════════════════
+# If .sd_session exists but no discharge process is running, the session is
+# a phantom — typically the residue of a failed LAYER2 start. Clear it once
+# it has had time to settle (60s) so the next interval starts clean.
+if [ -f "$SESSION_FILE" ]; then
+    if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
+        PHANTOM_AGE=$(( $(date +%s) - $(stat -f %m "$SESSION_FILE" 2>/dev/null || echo 0) ))
+        if [ "$PHANTOM_AGE" -gt 60 ]; then
+            AM_PH=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
+            log "LAYER4b: phantom session (${PHANTOM_AGE}s, mode=${AM_PH:-idle}, no discharge) — clearing"
+            rm -f "$SESSION_FILE"
+            if [ "$AM_PH" = "discharge" ]; then
+                rm -f "$HOME/.battopt-swiftbar/.active_token"
+                echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
+            fi
+        fi
     fi
 fi
 

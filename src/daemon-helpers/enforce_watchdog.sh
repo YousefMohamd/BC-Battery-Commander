@@ -11,6 +11,7 @@ LOG="$DASH/actions.log"
 LOG_FILE="$DASH/.enforce.log"
 CONFIG="$DASH/config"
 STATE_FILE="$DASH/.enforce_state"
+BAT="/usr/local/bin/battopt"
 
 if [ -e "$DASH/.user_shutdown" ]; then
     exit 0
@@ -85,7 +86,7 @@ log "VIOLATION #$COUNT: PCT=${PCT}% IsChg=Yes UPPER=${UPPER}% (elapsed ${ELAPSED
 if [ "$COUNT" -eq 1 ]; then
     # First detection: reapply limit (may unstick daemon)
     log "action: reapplying limit ${UPPER}/${LOWER}"
-    if ! sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
+    if ! sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
 
 elif [ "$COUNT" -eq 4 ]; then
     # 60s elapsed: restart daemon
@@ -96,12 +97,41 @@ elif [ "$COUNT" -eq 4 ]; then
     sleep 1
     sudo launchctl load -w /Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist 2>/dev/null
     sleep 3
-    if ! sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
+    if ! sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
 
 elif [ "$COUNT" -eq 8 ]; then
-    # 120s elapsed: force discharge
-    log "action: force discharge to ${UPPER}% (8 violations)"
-    sudo -n /usr/local/bin/battopt discharge "$UPPER" >> "$LOG_FILE" 2>&1
+    # 120s elapsed: force a *tracked* discharge.
+    # Previously this ran `battopt discharge` with no .active_mode /
+    # .active_token / .sd_session and no sd_watcher, which produced an
+    # unowned discharge process (B6). Acquire a guard session first so the
+    # rest of the system sees the exact same state a user-initiated
+    # discharge would create, and roll back to `limit` if it fails.
+    log "action: force tracked discharge to ${UPPER}% (8 violations)"
+    SD_ID=$(guard_session_begin discharge 2>/dev/null)
+    if [ -n "$SD_ID" ]; then
+        SD_SESSION="$DASH/.sd_session"
+        echo "$SD_ID" > "$SD_SESSION"
+        if [ -x "$DASH/sd_watcher.sh" ]; then
+            nohup "$DASH/sd_watcher.sh" \
+                "$SD_ID" "$UPPER" "$LOWER" "$SD_SESSION" "$LOG" "$BAT" \
+                >/dev/null 2>&1 &
+            disown
+        fi
+        nohup sudo -n "$BAT" discharge "$UPPER" >/dev/null 2>&1 &
+        disown
+        sleep 2
+        if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
+            log "action: tracked discharge failed — clearing session and reapplying limit"
+            if [ "$(cat "$SD_SESSION" 2>/dev/null)" = "$SD_ID" ]; then
+                rm -f "$SD_SESSION" "$DASH/.active_token"
+                echo "idle" > "$DASH/.active_mode"
+            fi
+            sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1
+        fi
+    else
+        log "action: could not acquire guard session — reapplying limit"
+        sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1
+    fi
 
 elif [ "$COUNT" -ge 16 ]; then
     # 240s elapsed: critical alert
