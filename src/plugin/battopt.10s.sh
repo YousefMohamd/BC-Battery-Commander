@@ -31,6 +31,11 @@ trap '_refresh_plugin' EXIT
 LAST_UPPER=80; LAST_LOWER=75; SAILING=true; SAIL_GAP=10
 [ -f "$MYCFG" ] && source "$MYCFG"
 
+# Always re-read config — bypasses any stale variable state
+[ -f "$MYCFG" ] && source "$MYCFG" 2>/dev/null
+LAST_UPPER="${LAST_UPPER:-80}"
+LAST_LOWER="${LAST_LOWER:-75}"
+
 # === STATUS CACHE (20s TTL) ===
 NOW_TS=$(date +%s)
 STATUS_CACHE="$HOME/.battopt-swiftbar/.status_cache"
@@ -191,11 +196,22 @@ ICON_MAXCAP=$(echo "$IOREG_DATA" | grep -oE '"MaxCapacity" = [0-9]+' | awk '{pri
 [ -z "$ICON_CHCUR" ] && ICON_CHCUR=0
 [ -z "$ICON_NCR" ] && ICON_NCR=0
 
-# Hardware-first: if hardware is in hold state, override stale active_mode
-if [ "$ICON_NCR" = "14" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
+# Hardware-first override: silent hold detection
+if [ "$ICON_NCR" = "14" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ] && \
+   [ "$ACTIVE_MODE" != "discharge" ] && [ "$ACTIVE_MODE" != "calibration" ]; then
     ACTIVE_MODE="hold"
-elif [ "$ACTIVE_MODE" = "discharge" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
-    ACTIVE_MODE="hold"
+fi
+
+# Discharge icon: trust ACTIVE_MODE AND verify with non-sudo pgrep
+if [ "$ACTIVE_MODE" = "discharge" ]; then
+    if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
+        ACTIVE_MODE="hold"
+    fi
+fi
+
+# Fallback: if discharge process is running but ACTIVE_MODE is stale, fix it
+if [ "$ACTIVE_MODE" != "discharge" ] && pgrep -f "battopt discharge" >/dev/null 2>&1; then
+    ACTIVE_MODE="discharge"
 fi
 
 case "$ACTIVE_MODE" in
@@ -428,7 +444,7 @@ if [ "$ACTIVE_MODE" = "hold" ]; then
 else
     echo "Stop Charging Now (hold at ${PCT}%) | bash=$DISPATCH param1=stop_now terminal=false refresh=true"
 fi
-if [ "$ACTIVE_MODE" = "charge_full" ]; then
+if [ "$ACTIVE_MODE" = "charge_full" ] || [ -f "$DASH/.charge_full_active" ]; then
     echo "✓ Charge to 100% & Hold | bash=$DISPATCH param1=charge_full terminal=false refresh=true"
 else
     echo "Charge to 100% & Hold | bash=$DISPATCH param1=charge_full terminal=false refresh=true"
