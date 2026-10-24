@@ -1,4 +1,23 @@
 #!/bin/bash
-/bin/launchctl kickstart -k system/com.buddha-path.BattOpt.daemon 2>/dev/null
+DAEMON="system/com.buddha-path.BattOpt.daemon"
+BAT="/usr/local/bin/battopt"
+
+/bin/launchctl kickstart -k "$DAEMON" 2>/dev/null
+KICK_RC=$?
 sleep 2
-exit 0
+
+# Probe the daemon regardless of kickstart exit code. On a disabled service
+# kickstart can return 0 without resurrecting the process, so the exit code
+# alone is not sufficient evidence of success.
+for i in 1 2 3 4 5 6 7 8 9 10; do
+    if sudo -n "$BAT" status >/dev/null 2>&1; then
+        exit 0
+    fi
+    sleep 0.5
+done
+
+# Daemon still not responding. Propagate the kickstart return code so that
+# force_reset.sh's unload -w + battopt-daemon-start fallback is reachable
+# (B7: the old `exit 0` made that branch dead code).
+[ "$KICK_RC" -ne 0 ] && exit "$KICK_RC"
+exit 1
