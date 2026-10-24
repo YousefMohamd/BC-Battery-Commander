@@ -50,14 +50,11 @@ case "$NEW_PROFILE" in
 esac
 
 log "profile: $CURRENT_PROFILE → $NEW_PROFILE (Ext=$EXT Clamshell=$CLAMSHELL)"
-"$DASH/power_saver.sh" apply-delays "$MAPPED_PROFILE"
 
 # ── Apply profile-specific settings ──
 case "$NEW_PROFILE" in
     long_battery)
-        [ "$HAS_POWERNAP" -gt 0 ] && sudo -n /usr/bin/pmset -b powernap 0 2>/dev/null
-        [ "$HAS_WOMP" -gt 0 ] && sudo -n /usr/bin/pmset -b womp 0 2>/dev/null
-        log "  applied long_battery delay profile"
+        log "  selected long_battery delay profile"
         ;;
     active_battery)
         log "  applied active_battery delay profile"

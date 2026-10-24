@@ -45,8 +45,14 @@ case "$SLEEP_MODE" in
         esac
         ;;
 esac
-"$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
-log "Applied sleep delay profile: $APPLY_PROFILE"
+if [ -f "$HOME/.battopt-swiftbar/.power_saver" ]; then
+    "$HOME/.battopt-swiftbar/power_saver.sh" on
+    "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
+    log "Applied sleep delay profile: $APPLY_PROFILE"
+else
+    "$HOME/.battopt-swiftbar/power_saver.sh" off
+    log "Power Saver disabled; applied conservative sleep settings"
+fi
 
 # 1. Kill audio apps completely (not just STOP)
 for app in VLC Spotify Music; do

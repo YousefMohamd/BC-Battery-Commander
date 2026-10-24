@@ -14,42 +14,51 @@ apply_delays() {
     local ac_high ac_low ac_auto ac_sleep
 
     case "$profile" in
-        default)
-            battery_high=2700
-            battery_low=2700
-            battery_auto=1800
+        conservative)
+            battery_high=3600
+            battery_low=3600
+            battery_auto=3600
             ac_high=3600
             ac_low=3600
             ac_auto=3600
-            ac_sleep=90
+            ac_sleep=30
+            ;;
+        default)
+            battery_high=300
+            battery_low=300
+            battery_auto=900
+            ac_high=300
+            ac_low=300
+            ac_auto=900
+            ac_sleep=20
             ;;
         long)
-            battery_high=3600
-            battery_low=3600
-            battery_auto=1800
-            ac_high=7200
-            ac_low=7200
-            ac_auto=3600
-            ac_sleep=90
+            battery_high=300
+            battery_low=300
+            battery_auto=900
+            ac_high=300
+            ac_low=300
+            ac_auto=900
+            ac_sleep=20
             ;;
         travel)
-            battery_high=3600
-            battery_low=3600
-            battery_auto=1800
-            ac_high=10800
-            ac_low=10800
-            ac_auto=3600
-            ac_sleep=90
+            battery_high=300
+            battery_low=300
+            battery_auto=900
+            ac_high=300
+            ac_low=300
+            ac_auto=900
+            ac_sleep=20
             ;;
         *)
             profile=default
-            battery_high=2700
-            battery_low=2700
-            battery_auto=1800
-            ac_high=3600
-            ac_low=3600
-            ac_auto=3600
-            ac_sleep=90
+            battery_high=300
+            battery_low=300
+            battery_auto=900
+            ac_high=300
+            ac_low=300
+            ac_auto=900
+            ac_sleep=20
             ;;
     esac
 
@@ -70,7 +79,7 @@ apply_delays() {
 }
 
 enforce_sleep_policy() {
-    apply_delays default
+    apply_delays conservative
 }
 
 case "$1" in
@@ -91,12 +100,20 @@ case "$1" in
         sudo -n "$PMSET_BIN" -a lidwake 1
         enforce_sleep_policy
         sudo -n "$PMSET_BIN" -a standby 1
+        sudo -n "$PMSET_BIN" -a standbydelay 300
+        sudo -n "$PMSET_BIN" -b standbydelayhigh 300
+        sudo -n "$PMSET_BIN" -b standbydelaylow 300
+        sudo -n "$PMSET_BIN" -c standbydelayhigh 300
+        sudo -n "$PMSET_BIN" -c standbydelaylow 300
+        sudo -n "$PMSET_BIN" -a sleep 20
+        sudo -n "$PMSET_BIN" -b sleep 20
+        sudo -n "$PMSET_BIN" -c sleep 20
         sudo -n "$PMSET_BIN" -a disksleep 10
-        sudo -n "$PMSET_BIN" schedule cancelall 2>/dev/null
         if [ "$ARCH" = "x86_64" ]; then
             sudo -n "$PMSET_BIN" -a hibernatemode 25
         fi
         sudo -n "$PMSET_BIN" -a autopoweroff 1
+        sudo -n "$PMSET_BIN" -a autopoweroffdelay 900
         printf "ENABLED" > "$FLAG.tmp" && mv "$FLAG.tmp" "$FLAG"
         echo "Power Saver: ENABLED"
         ;;
@@ -109,9 +126,19 @@ case "$1" in
         sudo -n "$PMSET_BIN" -a acwake 1
         sudo -n "$PMSET_BIN" -a lidwake 1
         enforce_sleep_policy
+        sudo -n "$PMSET_BIN" -a standby 0
+        sudo -n "$PMSET_BIN" -a standbydelay 3600
+        sudo -n "$PMSET_BIN" -b standbydelayhigh 3600
+        sudo -n "$PMSET_BIN" -b standbydelaylow 3600
+        sudo -n "$PMSET_BIN" -c standbydelayhigh 3600
+        sudo -n "$PMSET_BIN" -c standbydelaylow 3600
+        sudo -n "$PMSET_BIN" -a sleep 30
+        sudo -n "$PMSET_BIN" -b sleep 30
+        sudo -n "$PMSET_BIN" -c sleep 30
+        sudo -n "$PMSET_BIN" -a disksleep 10
         sudo -n "$PMSET_BIN" -a hibernatemode 3
         sudo -n "$PMSET_BIN" -a autopoweroff 0
-        sudo -n "$PMSET_BIN" -a standby 0
+        sudo -n "$PMSET_BIN" -a autopoweroffdelay 3600
         rm -f "$FLAG"
         echo "Power Saver: DISABLED"
         ;;
