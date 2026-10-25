@@ -435,16 +435,25 @@ intent_apply() {
                 run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
                 V=$(_verify_smc_upper)
             fi
-            guard_token_clear_locked
-            echo "idle" > "$D/.active_mode"
-            guard_unlock
             if [ "$V" = "$U" ]; then
-                notify "BattOpt" "Holding at ${V}%"
-                return 0
-            fi
-            log "intent_apply: hold_current failed (SMC=$V want=$U)"
-            notify "BattOpt" "Hold failed (SMC=$V)"
-            return 1
+                 [ -f "$CFG" ] && source "$CFG"
+                 LAST_UPPER="$U"
+                 LAST_LOWER="$L"
+                 save_cfg
+                 log "intent_apply: hold_current persisted $U/$L"
+                 guard_token_clear_locked
+                 echo "hold" > "$D/.active_mode"
+                 date +%s > "$D/.hold_since"
+                 guard_unlock
+                 notify "BattOpt" "Holding at ${V}%"
+                 return 0
+             fi
+             guard_token_clear_locked
+             echo "idle" > "$D/.active_mode"
+             guard_unlock
+             log "intent_apply: hold_current failed (SMC=$V want=$U)"
+             notify "BattOpt" "Hold failed (SMC=$V)"
+             return 1
             ;;
 
         sail_on|sail_off|sail_gap)
@@ -869,11 +878,13 @@ CFGEOF
     kill_calibrate) kill_calibrate ;;
 
     stop_now)
+        log "stop_now"
         acquire; ensure_clean
         release
         intent_apply hold_current ;;
 
     remove_limit_hold)
+        log "remove_limit_hold"
         acquire; ensure_clean
         release
         intent_apply hold_current ;;

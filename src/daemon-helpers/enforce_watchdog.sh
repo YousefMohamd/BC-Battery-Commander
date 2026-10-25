@@ -60,18 +60,18 @@ if [ $((HB_NOW - HB_LAST)) -ge 60 ]; then
     echo "[$(date '+%H:%M:%S')] heartbeat: alive (PCT=${PCT} UPPER=${UPPER})" >> "$LOG_FILE"
 fi
 
-if [ "$EXT" != "Yes" ] || [ "$ISCHG" != "Yes" ] || [ "$PCT" -lt "$UPPER" ]; then
+if [ "$EXT" != "Yes" ] || [ "$ISCHG" != "Yes" ] || [ "$PCT" -le "$UPPER" ]; then
     # Healthy — reset escalation counter, both cooldowns, and the notifier cap
     rm -f "$STATE_FILE" "$DISC_COOLDOWN_FILE" "$CRIT_COOLDOWN_FILE" "$CRIT_COUNT_FILE"
     exit 0
 fi
 
 # ═══ VIOLATION DETECTED ═══
-# Charging on AC while at/above UPPER
+# Charging on AC while above UPPER
 
 # Read escalation counter
 COUNT=0
-LAST_TS=0
+LAST_TS=$(date +%s)
 [ -f "$STATE_FILE" ] && {
     COUNT=$(cut -d'|' -f1 "$STATE_FILE" 2>/dev/null || echo 0)
     LAST_TS=$(cut -d'|' -f2 "$STATE_FILE" 2>/dev/null || echo 0)
