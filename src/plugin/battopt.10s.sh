@@ -451,7 +451,7 @@ else
 fi
 
 if [ "$ACTIVE_MODE" = "discharge" ]; then
-    echo "★ ✓ Smart Discharge to ${SD_TARGET:-${LAST_LOWER:-?}}% | bash=$DISPATCH param1=smart_discharge terminal=false refresh=true checked=true $ORANGE"
+    echo "★ ✓ Smart Discharge to ${SD_TARGET:-${LAST_UPPER:-?}}% | bash=$DISPATCH param1=smart_discharge terminal=false refresh=true checked=true $ORANGE"
     echo "↳ Stop Discharge (hold here) | bash=$DISPATCH param1=kill_discharge terminal=false refresh=true $GRAY"
 else
     echo "★ Smart Discharge... | bash=$DISPATCH param1=smart_discharge terminal=false refresh=true $ORANGE"
