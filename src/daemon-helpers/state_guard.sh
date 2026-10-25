@@ -31,6 +31,20 @@ guard_session_active() {
     esac
 }
 
+# read_effective_session
+# Read-only accessor for the current logical session mode.
+# Reads $SG_MODE (.active_mode), trims whitespace, validates against the
+# known set, and returns "idle" on any unknown/empty/missing value.
+# No writes, no lock, no sudo, pgrep-free by design: this is a pure read.
+read_effective_session() {
+    local mode
+    mode=$(cat "$SG_MODE" 2>/dev/null | tr -d '[:space:]')
+    case "$mode" in
+        hold|discharge|charge_full|calibration|idle) printf '%s\n' "$mode" ;;
+        *) printf 'idle\n' ;;
+    esac
+}
+
 guard_token() { cat "$SG_TOKEN" 2>/dev/null; }
 
 guard_new_token() { printf '%s_%s_%s' "$$" "$(date +%s)" "$1"; }
