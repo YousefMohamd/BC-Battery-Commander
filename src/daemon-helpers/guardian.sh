@@ -231,21 +231,45 @@ if [ ! -f "$SESSION_FILE" ]; then
 fi
 
 # ═══════════════════════════════════════════════════════
-# LAYER 4b: Phantom session cleanup
+# LAYER 4b: Phantom session cleanup / AC-disconnect recovery
 # ═══════════════════════════════════════════════════════
-# If .sd_session exists but no discharge process is running, the session is
-# a phantom — typically the residue of a failed LAYER2 start. Clear it once
-# it has had time to settle (60s) so the next interval starts clean.
+# If .sd_session exists but no discharge process is running, the session
+# looks like a phantom — typically the residue of a failed LAYER2 start.
+#
+# HOWEVER: "battopt discharge" requires AC power. When AC is disconnected
+# mid-discharge, the process exits because it cannot discharge on battery.
+# That is an expected interruption, not a fault. Clearing to idle loses the
+# enforcement context: on AC reconnect, the battery climbs toward the SMC
+# limit but with no dispatch to track the overshoot until guardian LAYER3a
+# happens to see NCR=14 + SMC match + mode=idle.
+#
+# Correct handling:
+#   * AC present, no discharge, mode=discharge → genuine fault → clear to idle.
+#   * AC absent,  no discharge, mode=discharge → interrupted → transition to
+#     hold, record .hold_since, drop .active_token and .sd_session. On AC
+#     reconnect LAYER2 re-discharges if PCT > UPPER; if PCT <= UPPER the SMC
+#     limit resumes charging to UPPER.
+#   * Any other mode (hold/idle/...) with a stale .sd_session → just clear the
+#     session file; mode is left untouched.
 if [ -f "$SESSION_FILE" ]; then
     if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
         PHANTOM_AGE=$(( $(date +%s) - $(stat -f %m "$SESSION_FILE" 2>/dev/null || echo 0) ))
         if [ "$PHANTOM_AGE" -gt 60 ]; then
             AM_PH=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:]')
-            log "LAYER4b: phantom session (${PHANTOM_AGE}s, mode=${AM_PH:-idle}, no discharge) — clearing"
-            rm -f "$SESSION_FILE"
-            if [ "$AM_PH" = "discharge" ]; then
-                rm -f "$HOME/.battopt-swiftbar/.active_token"
-                echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
+            AC_PH=$(pmset -g batt 2>/dev/null | grep -q "AC Power" && echo "yes" || echo "no")
+
+            if [ "$AM_PH" = "discharge" ] && [ "$AC_PH" = "no" ]; then
+                log "LAYER4b: discharge interrupted by AC disconnect (${PHANTOM_AGE}s) — transitioning to hold"
+                rm -f "$SESSION_FILE" "$HOME/.battopt-swiftbar/.active_token"
+                echo "hold" > "$HOME/.battopt-swiftbar/.active_mode"
+                date +%s > "$HOME/.battopt-swiftbar/.hold_since"
+            else
+                log "LAYER4b: phantom session (${PHANTOM_AGE}s, mode=${AM_PH:-idle}, AC=${AC_PH:-?}, no discharge) — clearing"
+                rm -f "$SESSION_FILE"
+                if [ "$AM_PH" = "discharge" ]; then
+                    rm -f "$HOME/.battopt-swiftbar/.active_token"
+                    echo "idle" > "$HOME/.battopt-swiftbar/.active_mode"
+                fi
             fi
         fi
     fi
