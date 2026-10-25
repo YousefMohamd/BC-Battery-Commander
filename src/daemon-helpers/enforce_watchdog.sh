@@ -12,6 +12,8 @@ LOG_FILE="$DASH/.enforce.log"
 CONFIG="$DASH/config"
 STATE_FILE="$DASH/.enforce_state"
 DISC_COOLDOWN_FILE="$DASH/.enforce_last_discharge"
+CRIT_COOLDOWN_FILE="$DASH/.enforce_last_critical"
+CRIT_COUNT_FILE="$DASH/.enforce_crit_count"
 BAT="/usr/local/bin/battopt"
 
 if [ -e "$DASH/.user_shutdown" ]; then
@@ -59,8 +61,8 @@ if [ $((HB_NOW - HB_LAST)) -ge 60 ]; then
 fi
 
 if [ "$EXT" != "Yes" ] || [ "$ISCHG" != "Yes" ] || [ "$PCT" -lt "$UPPER" ]; then
-    # Healthy — reset escalation counter and discharge cooldown
-    rm -f "$STATE_FILE" "$DISC_COOLDOWN_FILE"
+    # Healthy — reset escalation counter, both cooldowns, and the notifier cap
+    rm -f "$STATE_FILE" "$DISC_COOLDOWN_FILE" "$CRIT_COOLDOWN_FILE" "$CRIT_COUNT_FILE"
     exit 0
 fi
 
@@ -88,8 +90,9 @@ if [ "$COUNT" -eq 1 ]; then
     # First detection: reapply limit (may unstick daemon)
     log "action: reapplying limit ${UPPER}/${LOWER}"
     if ! sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
+fi
 
-elif [ "$COUNT" -eq 4 ]; then
+if [ "$COUNT" -eq 4 ]; then
     # 60s elapsed: restart daemon
     log "action: restarting daemon (4 violations)"
     sudo pkill -9 -f "Application Support/battopt/battopt daemon" 2>/dev/null
@@ -99,13 +102,12 @@ elif [ "$COUNT" -eq 4 ]; then
     sudo launchctl load -w /Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist 2>/dev/null
     sleep 3
     if ! sudo -n "$BAT" limit "$UPPER" "$LOWER" >> "$LOG_FILE" 2>&1; then log "sudo fail limit $UPPER/$LOWER"; exit 1; fi
+fi
 
-elif [ "$COUNT" -ge 8 ] && [ "$COUNT" -lt 16 ]; then
-    # 120s elapsed: force a *tracked* discharge.
-    # H4: -eq 8 was one-shot per state file lifetime — after the discharge
-    # launched, COUNT advanced past 8 and the branch could not re-fire.
-    # Use a range and a cooldown file so a persistent violation retries
-    # the tracked discharge every 300s without spamming it every tick.
+# Standalone tracked discharge retry. Fires on every tick while COUNT >= 8,
+# but the 300s cooldown gates the actual spawn so a persistent violation does
+# not respawn the discharge every enforcement interval.
+if [ "$COUNT" -ge 8 ]; then
     LAST_DISCH=0
     [ -f "$DISC_COOLDOWN_FILE" ] && LAST_DISCH=$(cat "$DISC_COOLDOWN_FILE" 2>/dev/null || echo 0)
     if [ $((NOW - LAST_DISCH)) -ge 300 ]; then
@@ -140,18 +142,34 @@ elif [ "$COUNT" -ge 8 ] && [ "$COUNT" -lt 16 ]; then
         fi
         echo "$NOW" > "$DISC_COOLDOWN_FILE"
     fi
+fi
 
-elif [ "$COUNT" -ge 16 ]; then
-    # 240s elapsed: critical alert
-    log "CRITICAL: enforcement failed for 240s — possible SMC/binary fault"
-    NOTIFIER="/Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier"
-    if [ -x "$NOTIFIER" ]; then
-        "$NOTIFIER" -title "BattOpt — CRITICAL" \
-            -message "Charge limit not enforced. Battery at ${PCT}% > ${UPPER}%. Check daemon." \
-            -sound Basso -group battopt >/dev/null 2>&1
+# Standalone CRITICAL escalation. Fires on every tick while COUNT >= 16, gated
+# by a 300s cooldown. The notifier is capped at 3 per violation episode; the
+# count file is cleared by the healthy path so a fresh episode restarts at 0.
+# COUNT is never reset here — the ladder is monotonic for the episode.
+if [ "$COUNT" -ge 16 ]; then
+    LAST_CRIT=0
+    [ -f "$CRIT_COOLDOWN_FILE" ] && LAST_CRIT=$(cat "$CRIT_COOLDOWN_FILE" 2>/dev/null || echo 0)
+    if [ $((NOW - LAST_CRIT)) -ge 300 ]; then
+        log "CRITICAL: enforcement failed — possible SMC/binary fault (COUNT=$COUNT)"
+        NOTIFY_COUNT=0
+        [ -f "$CRIT_COUNT_FILE" ] && NOTIFY_COUNT=$(cat "$CRIT_COUNT_FILE" 2>/dev/null || echo 0)
+        case "$NOTIFY_COUNT" in ''|*[!0-9]*) NOTIFY_COUNT=0 ;; esac
+        if [ "$NOTIFY_COUNT" -lt 3 ]; then
+            NOTIFIER="/Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier"
+            if [ -x "$NOTIFIER" ]; then
+                "$NOTIFIER" -title "BattOpt — CRITICAL" \
+                    -message "Charge limit not enforced. Battery at ${PCT}% > ${UPPER}%. Check daemon." \
+                    -sound Basso -group battopt >/dev/null 2>&1
+            fi
+            NOTIFY_COUNT=$((NOTIFY_COUNT + 1))
+            echo "$NOTIFY_COUNT" > "$CRIT_COUNT_FILE"
+        else
+            log "CRITICAL: notification suppressed by cap (${NOTIFY_COUNT}/3)"
+        fi
+        echo "$NOW" > "$CRIT_COOLDOWN_FILE"
     fi
-    # Reset to avoid spam, but keep escalating every 16
-    COUNT=15
 fi
 
 # Save state
