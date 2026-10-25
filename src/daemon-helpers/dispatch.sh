@@ -7,6 +7,15 @@ LOCK="$DASH/.op.lock"
 CFG="$DASH/config"
 FORCE="$DASH/force_reset.sh"
 
+LOCK_TIMEOUT="${LOCK_TIMEOUT:-600}"
+LOCK_OWNED=0
+LOCK_OWNER_PID=""
+LOCK_WATCHDOG_PID=""
+
+case "$LOCK_TIMEOUT" in
+    ''|*[!0-9]*) LOCK_TIMEOUT=600 ;;
+esac
+
 # Shared session guard (state_guard.sh provides guard_session_active, etc.)
 if [ -f "$HOME/.battopt-swiftbar/state_guard.sh" ]; then
     source "$HOME/.battopt-swiftbar/state_guard.sh"
@@ -85,7 +94,7 @@ SAIL_GAP=$SAIL_GAP
 EOF
 }
 
-kill_clients() { sudo pkill -9 -f "/usr/local/bin/battopt" 2>/dev/null; sleep 1; }
+kill_clients() { sudo -n pkill -9 -f "/usr/local/bin/battopt" 2>/dev/null; sleep 1; }
 soft_stop() { sudo -n "$BAT" discharge stop >/dev/null 2>&1; sudo -n "$BAT" calibrate stop >/dev/null 2>&1; sleep 0.5; }
 
 # Fast daemon health check — 3 second timeout
@@ -170,21 +179,110 @@ ensure_clean() {
         log "stuck - force"; "$FORCE" > /dev/null 2>&1
     fi
 }
-acquire() {
-    if [ -f "$LOCK" ]; then
-        OLD=$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]')
-        if [ -n "$OLD" ] && ! kill -0 "$OLD" 2>/dev/null; then
-            rm -f "$LOCK"
-        else
-            AGE=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || echo 0) ))
-            [ "$AGE" -gt 30 ] && rm -f "$LOCK" || { log "lock held"; exit 2; }
-        fi
-    fi
-    echo $$ > "$LOCK"
-    # SAFETY LAYER: preflight before every action
-    preflight
+
+_kill_descendants() {
+    local signal="$1"
+    local pid="$2"
+    local child
+
+    for child in $(pgrep -P "$pid" 2>/dev/null); do
+        _kill_descendants "$signal" "$child"
+    done
+    kill "-$signal" "$pid" 2>/dev/null || true
 }
-release() { rm -f "$LOCK"
+
+_start_lock_watchdog() {
+    (
+        sleep "$LOCK_TIMEOUT"
+
+        if [ "$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]')" = "$LOCK_OWNER_PID" ] &&
+           kill -0 "$LOCK_OWNER_PID" 2>/dev/null; then
+            log "acquire: lock timeout ${LOCK_TIMEOUT}s; terminating dispatch pid=$LOCK_OWNER_PID"
+            _kill_descendants TERM "$LOCK_OWNER_PID"
+            sleep 2
+            if kill -0 "$LOCK_OWNER_PID" 2>/dev/null; then
+                _kill_descendants KILL "$LOCK_OWNER_PID"
+            fi
+        fi
+    ) >/dev/null 2>&1 &
+    LOCK_WATCHDOG_PID=$!
+}
+
+acquire() {
+    local old_pid old_age old_cmd
+
+    while :; do
+        # Bash noclobber provides an atomic create for the PID file.
+        if ( set -C; printf '%s\n' "$$" > "$LOCK" ) 2>/dev/null; then
+            break
+        fi
+
+        old_pid=$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]')
+
+        if [ -z "$old_pid" ] || ! kill -0 "$old_pid" 2>/dev/null; then
+            log "acquire: removing dead lock owner=${old_pid:-unknown}"
+            if [ "$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]')" = "$old_pid" ]; then
+                rm -f "$LOCK"
+            fi
+            continue
+        fi
+
+        old_age=$(( $(date +%s) - $(stat -f %m "$LOCK" 2>/dev/null || echo 0) ))
+        if [ "$old_age" -gt "$LOCK_TIMEOUT" ]; then
+            old_cmd=$(ps -p "$old_pid" -o command= 2>/dev/null)
+            log "acquire: stale lock pid=$old_pid age=${old_age}s"
+
+            # Terminate only a process that still appears to be dispatch.sh.
+            # Never kill an unrelated process that reused the recorded PID.
+            case "$old_cmd" in
+                *dispatch.sh*)
+                    _kill_descendants TERM "$old_pid"
+                    sleep 2
+                    if kill -0 "$old_pid" 2>/dev/null; then
+                        _kill_descendants KILL "$old_pid"
+                    fi
+                    ;;
+            esac
+
+            # Remove only the same owner observed above. Do not remove a
+            # newer owner's lock if the expired process already cleaned up.
+            if [ "$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]')" = "$old_pid" ]; then
+                rm -f "$LOCK"
+            fi
+            continue
+        fi
+
+        log "lock held by pid=$old_pid age=${old_age}s"
+        exit 2
+    done
+
+    LOCK_OWNED=1
+    LOCK_OWNER_PID=$$
+    log "acquire: lock acquired pid=$$"
+
+    _start_lock_watchdog
+
+    # SAFETY LAYER: preflight before every action
+    if ! preflight; then
+        release
+        exit 1
+    fi
+}
+
+release() {
+    if [ "$LOCK_OWNED" -eq 1 ] &&
+       [ "$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]')" = "$$" ]; then
+        rm -f "$LOCK"
+    fi
+
+    if [ -n "$LOCK_WATCHDOG_PID" ]; then
+        kill "$LOCK_WATCHDOG_PID" 2>/dev/null || true
+        wait "$LOCK_WATCHDOG_PID" 2>/dev/null || true
+        LOCK_WATCHDOG_PID=""
+    fi
+
+    LOCK_OWNED=0
+    LOCK_OWNER_PID=""
     clear_cache; }
 
 notify() {
@@ -201,8 +299,8 @@ notify() {
 }
 
 kill_charge()    { log "kill_charge";    sudo pkill -9 -f "battopt charge " 2>/dev/null; sleep 0.5; }
-kill_discharge() { log "kill_discharge"; sudo pkill -9 -f "battopt discharge" 2>/dev/null; sudo -n "$BAT" discharge stop >/dev/null 2>&1; sleep 0.5; }
-kill_calibrate() { log "kill_calibrate"; sudo pkill -9 -f "battopt calibrate" 2>/dev/null; sudo -n "$BAT" calibrate stop >/dev/null 2>&1; sleep 0.5; }
+kill_discharge() { log "kill_discharge"; sudo -n pkill -9 -f "battopt discharge" 2>/dev/null; sudo -n "$BAT" discharge stop >/dev/null 2>&1; sleep 0.5; }
+kill_calibrate() { log "kill_calibrate"; sudo -n pkill -9 -f "battopt calibrate" 2>/dev/null; sudo -n "$BAT" calibrate stop >/dev/null 2>&1; sleep 0.5; }
 
 
 # === CACHE INVALIDATION ===
@@ -532,8 +630,34 @@ intent_apply() {
 
 # === END INTENT APPLY ===
 
-# Fire refresh on exit (normal + error paths)
-trap "sleep 1; refresh_swiftbar" EXIT
+cleanup() {
+    local rc="$1"
+
+    if [ -n "$LOCK_WATCHDOG_PID" ]; then
+        kill "$LOCK_WATCHDOG_PID" 2>/dev/null || true
+        wait "$LOCK_WATCHDOG_PID" 2>/dev/null || true
+        LOCK_WATCHDOG_PID=""
+    fi
+
+    # Remove only our lock. A delayed cleanup must never remove a newer
+    # dispatch process's lock after ownership has changed.
+    if [ "$LOCK_OWNED" -eq 1 ] &&
+       [ "$(cat "$LOCK" 2>/dev/null | tr -d '[:space:]')" = "$$" ]; then
+        rm -f "$LOCK"
+    fi
+
+    sleep 1
+    refresh_swiftbar
+    return "$rc"
+}
+
+# Convert termination signals into a normal exit so the EXIT cleanup runs.
+trap 'exit 143' TERM
+trap 'exit 130' INT
+trap 'exit 129' HUP
+
+# Fire refresh and lock cleanup on normal, error, and signal paths.
+trap 'cleanup $?' EXIT
 
 case "$1" in
     force_reset) "$FORCE" ;;
@@ -846,6 +970,7 @@ AS
 
     limit_custom)
         acquire; ensure_clean
+        log "limit_custom: acquired lock; waiting for input"
         CUR=$(get_pct)
         DEF=$(get_last_input LIMIT_CUSTOM "")
         [ -z "$DEF" ] && DEF="${LAST_UPPER}/${LAST_LOWER}"
@@ -1325,9 +1450,9 @@ OSA
             sudo -n "$BAT" status 2>&1 | tail -n +2
             echo ""
             echo "--- POWER SETTINGS ---"
-            pmset -g | grep -E "womp|powernap|tcpkeepalive|standbydelay|hibernatemode|sleep "
+            pmset -g | grep -E "womp|powernap|tcpkeepalive|standbydelay|standby |hibernatemode|sleep "
             echo ""
-            echo "--- WAKE EVENTS (last 24h) ---"
+            echo "--- WAKE EVENTS ---"
             pmset -g log | grep -E "Wake from|DarkWake" | tail -30
             echo ""
             echo "--- ASSERTIONS ---"
