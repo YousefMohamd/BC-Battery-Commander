@@ -1404,6 +1404,8 @@ OSA
         ;;
 
     open_app)
+        # S4: Log open_app requests only - no guard, restore path must stay open
+        log "open_app requested (shutdown flag: $([ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && echo present || echo absent))"
         open "/Applications/BattOpt.app"
         notify "BattOpt" "Opening BattOpt Control Center"
         ;;
