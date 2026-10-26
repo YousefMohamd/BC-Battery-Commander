@@ -224,10 +224,12 @@ if [ "$ICON_NCR" = "14" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]
     ACTIVE_MODE="hold"
 fi
 
-# Discharge icon: trust ACTIVE_MODE AND verify with non-sudo pgrep
+# Discharge icon: trust ACTIVE_MODE AND verify with non-sudo pgrep (AUTODIS: token bridges process gaps)
 if [ "$ACTIVE_MODE" = "discharge" ]; then
     if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
-        ACTIVE_MODE="hold"
+        if [ ! -s "$HOME/.battopt-swiftbar/.active_token" ]; then
+            ACTIVE_MODE="hold"
+        fi
     fi
 fi
 

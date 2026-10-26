@@ -21,7 +21,11 @@ if [ "$ICON_NCR" = "14" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]
 fi
 if [ "$DISPLAY_MODE" = "discharge" ]; then
     if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
-        DISPLAY_MODE="hold"
+        # AUTODIS: trust an active session token through process gaps
+        # (AC disconnect / restart). Demote only when no token remains.
+        if [ ! -s "$HOME/.battopt-swiftbar/.active_token" ]; then
+            DISPLAY_MODE="hold"
+        fi
     fi
 fi
 if [ "$DISPLAY_MODE" != "discharge" ] && pgrep -f "battopt discharge" >/dev/null 2>&1; then
