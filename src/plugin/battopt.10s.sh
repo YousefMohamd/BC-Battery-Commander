@@ -484,8 +484,13 @@ if [ "$ACTIVE_MODE" = "hold" ]; then
 else
     echo "Stop Charging Now (hold at ${PCT}%) | bash=$DISPATCH param1=stop_now terminal=false refresh=true"
 fi
-if [ "$ACTIVE_MODE" = "charge_full" ] || [ -f "$DASH/.charge_full_active" ]; then
-    echo "✓ Charge to 100% & Hold | bash=$DISPATCH param1=charge_full terminal=false refresh=true"
+CHARGE_TARGET=$(cat "$DASH/.charge_target" 2>/dev/null || echo "")
+if [ "$ACTIVE_MODE" = "charge_full" ]; then
+    if [ -z "$CHARGE_TARGET" ] || [ "$CHARGE_TARGET" = "100" ]; then
+        echo "✓ Charge to 100% & Hold | bash=$DISPATCH param1=charge_full terminal=false refresh=true"
+    else
+        echo "Charge to 100% & Hold | bash=$DISPATCH param1=charge_full terminal=false refresh=true"
+    fi
 else
     echo "Charge to 100% & Hold | bash=$DISPATCH param1=charge_full terminal=false refresh=true"
 fi

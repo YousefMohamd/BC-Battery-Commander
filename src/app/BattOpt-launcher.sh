@@ -116,10 +116,12 @@ sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1
 if [ -z "$CURRENT_PCT" ]; then
     # Can't read battery — apply limits only, stay safe
     log "WARN: could not read battery %; applying limits only"
+    rm -f "$DASH/.charge_target"  # hold = no target
     echo "hold" > "$DASH/.active_mode"
 
 elif [ "$CURRENT_PCT" -lt "$LAST_LOWER" ]; then
     # Below lower limit → charge to LAST_UPPER
+    echo "$LAST_UPPER" > "$DASH/.charge_target"  # launcher charge = to config upper, not 100
     echo "charge_full" > "$DASH/.active_mode"
     log "Reconciler: PCT=${CURRENT_PCT}% < LOWER=${LAST_LOWER}% — starting charge"
     nohup sudo -n "$BAT" charge "$LAST_UPPER" >/dev/null 2>&1 &
@@ -130,6 +132,7 @@ else
     # further charging; natural drain brings a battery above upper back into
     # the band. Launch must never actively discharge — that is an explicit
     # user action (smart_discharge) per BattOpt design.
+    rm -f "$DASH/.charge_target"  # hold = no target
     echo "hold" > "$DASH/.active_mode"
     log "Reconciler: PCT=${CURRENT_PCT}% ≥ LOWER=${LAST_LOWER}% — holding (no discharge)"
 fi
@@ -148,6 +151,7 @@ fi
 # state that is already above the enforced limit.
 if [ -n "$CURRENT_PCT" ] && [ "$CURRENT_PCT" -gt "$LAST_UPPER" ]; then
     log "Reconciler: PCT=${CURRENT_PCT}% > UPPER=${LAST_UPPER}% post-launch — asserting idle for guardian"
+    rm -f "$DASH/.charge_target"  # overshoot is not a charge intent
     echo "idle" > "$DASH/.active_mode"
 fi
 

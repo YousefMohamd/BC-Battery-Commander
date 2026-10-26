@@ -443,6 +443,7 @@ intent_apply() {
                  log "intent_apply: hold_current persisted $U/$L"
                  guard_token_clear_locked
                  echo "hold" > "$D/.active_mode"
+                 rm -f "$D/.charge_target"  # hold = no target
                  date +%s > "$D/.hold_since"
                  guard_unlock
                  notify "BattOpt" "Holding at ${V}%"
@@ -450,6 +451,7 @@ intent_apply() {
              fi
              guard_token_clear_locked
              echo "idle" > "$D/.active_mode"
+             rm -f "$D/.charge_target"  # hold failed, no charge intent
              guard_unlock
              log "intent_apply: hold_current failed (SMC=$V want=$U)"
              notify "BattOpt" "Hold failed (SMC=$V)"
@@ -515,6 +517,7 @@ intent_apply() {
             fi
             guard_token_clear_locked
             echo "idle" > "$D/.active_mode"
+            rm -f "$D/.charge_target"  # limits disabled, no charge intent
             guard_unlock
             if [ "$V" = "$U" ]; then
                 notify "BattOpt" "Limits disabled (SMC=$V)"
@@ -526,8 +529,10 @@ intent_apply() {
             ;;
 
         charge_full)
+            echo "100" > "$D/.charge_target"  # dispatch charge = to 100
             echo "charge_full" > "$D/.active_mode"
             TOKEN=$(guard_token_write_locked charge_full) || {
+                rm -f "$D/.charge_target"  # token failed, no charge intent
                 echo "idle" > "$D/.active_mode"
                 guard_unlock
                 return 1
@@ -542,6 +547,7 @@ intent_apply() {
             if [ "$V" != 100 ]; then
                 guard_token_clear_locked
                 echo "idle" > "$D/.active_mode"
+                rm -f "$D/.charge_target"  # SMC failed, no charge intent
                 guard_unlock
                 notify "BattOpt" "Charge Full failed (SMC=$V)"
                 return 1
@@ -561,10 +567,13 @@ intent_apply() {
                     sudo -n "$B" charge stop >/dev/null 2>&1
                     sudo -n "$B" limit 99 98 >/dev/null 2>&1
                     printf "LAST_UPPER=99\nLAST_LOWER=98\nSAILING=false\nSAIL_GAP=1\n" > "$D/config.tmp.$$" && mv "$D/config.tmp.$$" "$D/config"
+                    rm -f "$D/.charge_target"
                 else
                     sudo -n "$B" charge stop >/dev/null 2>&1
+                    rm -f "$D/.charge_target"
                 fi
                 guard_session_end "$T" 2>/dev/null
+                rm -f "$D/.charge_target"
                 echo "[$(date +%H:%M:%S)] charge_full: watcher finished" >> "$L"
             ' _ "$BAT" "$D" "$LOG" "$TOKEN" >/dev/null 2>&1 &
             disown
@@ -1239,7 +1248,7 @@ ACTIVE_MODE=$SESSION_MODE
         fi
 
         # 9. Purge state files
-        for _sf in .sd_session .sd_watch .active_mode \
+        for _sf in .sd_session .sd_watch .active_mode .charge_target \
                    .hold_override .hold_token .pre_hold_config \
                    .armed_for_sleep .status_cache \
                    .enforce_hb .enforce_state .ac_state .ncr_state \
