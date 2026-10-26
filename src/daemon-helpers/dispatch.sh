@@ -1267,10 +1267,17 @@ ACTIVE_MODE=$SESSION_MODE
         # S2: Use cat - sudoers allows cat, not head, so CFG check can FAIL when enabled
         CFG_EN=$(sudo -n cat "/Library/Application Support/battopt/battopt_cfg" 2>/dev/null | grep -oE "limit_enable = [01]" || echo "unknown")
         [ "$CFG_EN" = "unknown" ] && log "shutdown: WARN cfg unknown"
+        # H3: Verify user agents, login item, and cron - pgrep misses loaded-but-not-running agents
+        AGENTS_LEFT=$(launchctl list 2>/dev/null | grep -c "com.battopt" || true)
+        LOGIN_LEFT=$(osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null | grep -c "BattOpt" || true)
+        CRON_LEFT=$(crontab -l 2>/dev/null | grep -c "battopt" || true)
         FAIL=0
         [ -n "$SURVIVORS" ] && { log "shutdown: FAIL survivors pgrep: $SURVIVORS"; FAIL=1; }
         [ -n "$LAUNCH_SURVIVORS" ] && { log "shutdown: FAIL survivors launchctl: $LAUNCH_SURVIVORS"; FAIL=1; }
         [ "$CFG_EN" = "limit_enable = 1" ] && { log "shutdown: FAIL cfg still enabled ($CFG_EN)"; FAIL=1; }
+        [ "$AGENTS_LEFT" -gt 0 ] && { log "shutdown: FAIL agents still loaded: $AGENTS_LEFT"; FAIL=1; }
+        [ "$LOGIN_LEFT" -gt 0 ] && { log "shutdown: FAIL login item persists"; FAIL=1; }
+        [ "$CRON_LEFT" -gt 0 ] && { log "shutdown: FAIL cron entry present"; FAIL=1; }
         [ "$NCR_NOW" = "14" ] && log "shutdown: WARN SMC still NCR=14"
         END_TS=$(date +%s)
         if [ "$FAIL" -eq 0 ]; then
