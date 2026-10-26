@@ -230,6 +230,11 @@ case "$ACTIVE_MODE" in
         ;;
 esac
 
+# Battery-first: on battery, show red regardless of mode (user decision 03:01)
+if [ "$ICON_EXT" = "No" ] && [ "$ICON_ISCHG" = "No" ]; then
+    ICON="🔴"
+fi
+
 if [ -n "$ICON_CURCAP" ] && [ -n "$ICON_MAXCAP" ] && [ "$ICON_MAXCAP" -gt 0 ] 2>/dev/null; then
     SMC_PCT=$(( (ICON_CURCAP * 100 + ICON_MAXCAP / 2) / ICON_MAXCAP ))
 else
