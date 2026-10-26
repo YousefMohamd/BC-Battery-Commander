@@ -1133,6 +1133,7 @@ AS
 
     shutdown)
         acquire
+        guard_lock || { log "shutdown: guard_lock failed"; notify "BattOpt" "Shutdown incomplete - check actions.log"; release; exit 1; }
         if [ "$2" != "--force" ]; then
             CONFIRM=$(osascript <<'AS'
 try
@@ -1143,7 +1144,7 @@ on error
 end try
 AS
 )
-        [ "$CONFIRM" != "Shut Down" ] && { release; exit 0; }
+        [ "$CONFIRM" != "Shut Down" ] && { guard_unlock 2>/dev/null || true; release; exit 0; }
         fi
         log "shutdown: START"
         START_TS=$(date +%s)
@@ -1159,6 +1160,14 @@ ACTIVE_MODE=$SESSION_MODE
         # 1. Set flag FIRST
         touch "$HOME/.battopt-swiftbar/.user_shutdown"
 
+        # 1d. Invalidate discharge session under guard_lock BEFORE kills
+        # .last_session_mode was already saved above, so writing idle here does not lose it.
+        # sd_watcher does not check .user_shutdown, only its session file/token.
+        sd_session_invalidate 2>/dev/null || true
+        rm -f "$HOME/.battopt-swiftbar/.active_token" 2>/dev/null || true
+        printf '%s\n' "idle" > "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null || true
+        log "shutdown: session invalidated before kills"
+
         # 1b. Grace period
         sleep 2
 
@@ -1167,6 +1176,11 @@ ACTIVE_MODE=$SESSION_MODE
         osascript -e 'tell application "System Events" to try' \
                 -e 'delete login item "BattOpt"' \
                 -e 'end try' 2>/dev/null || true
+
+        # 2a. Daemon-side stop BEFORE pkill (daemon cancels its own intent first)
+        soft_stop 2>/dev/null || true
+        sudo -n /usr/local/bin/battopt charge stop >/dev/null 2>&1 || true
+        log "shutdown: daemon-side stop sent"
 
         # 2. Kill in-flight ops + force_reset watchdog
         pkill -9 -f "force_reset" 2>/dev/null || true
@@ -1191,7 +1205,14 @@ ACTIVE_MODE=$SESSION_MODE
         pkill -9 -f "consolidated" 2>/dev/null || true
         pkill -9 -f "self-healing" 2>/dev/null || true
         pkill -9 -f "sd_watcher" 2>/dev/null || true
-        log "shutdown: agents unloaded"
+        log "shutdown: agents unloaded (guardian/enforce/consolidated/self-healing/sd_watcher killed)"
+        # 3b. Residual kill pass AFTER unload (agents could respawn a client between step 2 and step 3)
+        sudo -n pkill -9 -f "battopt discharge" 2>/dev/null || true
+        sudo -n pkill -9 -f "battopt charge" 2>/dev/null || true
+        sudo -n pkill -9 -f "battopt calibrate" 2>/dev/null || true
+        pkill -9 -f "sd_watcher" 2>/dev/null || true
+        pkill -9 -f "charge_full: watcher finished" 2>/dev/null || true
+        log "shutdown: residual kills sent"
 
         # 4. Release SMC WHILE DAEMON STILL ALIVE (chicken-egg fix)
         log "shutdown: setting limit_enable=0 in battopt_cfg"
@@ -1312,7 +1333,12 @@ ACTIVE_MODE=$SESSION_MODE
         else
             log "shutdown: INCOMPLETE in $((END_TS-START_TS))s"
         fi
-        notify "BattOpt" "Shut down. Open BattOpt.app to restore."
+        if [ "$FAIL" -eq 0 ]; then
+            notify "BattOpt" "Shut down. Open BattOpt.app to restore."
+        else
+            notify "BattOpt" "Shutdown incomplete - check actions.log"
+        fi
+        guard_unlock 2>/dev/null || true
         release
         ;;
 
