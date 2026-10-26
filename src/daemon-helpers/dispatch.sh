@@ -1191,17 +1191,24 @@ ACTIVE_MODE=$SESSION_MODE
         sudo -n /usr/local/bin/battopt limit 100 99 >> "$LOG" 2>&1 || true
 
         # 5. Poll SMC BEFORE killing daemon
-        RELEASED=no
+        RELEASED=unverified
+        RELEASE_SMC=""
+        RELEASE_NCR=""
         for i in $(seq 1 10); do
             sleep 1
-            NCR_NOW=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)
-            if [ "$NCR_NOW" != "14" ]; then
+            IOREG_SNAP=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+            NCR_NOW=$(echo "$IOREG_SNAP" | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)
+            SMC_UP=$(sudo -n "$BAT" status 2>/dev/null | grep -oE 'upper limit [0-9]+' | grep -oE '[0-9]+' | head -1)
+            RELEASE_SMC="$SMC_UP"
+            RELEASE_NCR="$NCR_NOW"
+            log "shutdown: poll ${i}s - SMC_upper=${SMC_UP:-?} NCR=${NCR_NOW:-?}"
+            if [ "$SMC_UP" = "100" ] && [ "$NCR_NOW" = "0" ]; then
                 RELEASED=yes
-                log "shutdown: SMC released after ${i}s (NCR=$NCR_NOW)"
+                log "shutdown: SMC released after ${i}s (upper=100 NCR=0)"
                 break
             fi
         done
-        [ "$RELEASED" = "no" ] && log "shutdown: WARN SMC still NCR=14 before daemon kill"
+        [ "$RELEASED" != "yes" ] && log "shutdown: WARN release unverified (SMC=${RELEASE_SMC:-?} NCR=${RELEASE_NCR:-?}) - proceeding to daemon stop"
 
         # 6. THEN stop daemon ROBUSTLY
         sudo -n pkill -9 -f "Application Support/battopt/battopt daemon" 2>/dev/null || true
@@ -1285,9 +1292,14 @@ ACTIVE_MODE=$SESSION_MODE
         [ "$LOGIN_LEFT" -gt 0 ] && { log "shutdown: FAIL login item persists"; FAIL=1; }
         [ "$CRON_LEFT" -gt 0 ] && { log "shutdown: FAIL cron entry present"; FAIL=1; }
         [ "$NCR_NOW" = "14" ] && log "shutdown: WARN SMC still NCR=14"
+        # R3: watcher survivor check - pkill -9 is immediate, so alive at verification = real survivor
+        WATCHER_LEFT=$(pgrep -f "charge_full: watcher finished" 2>/dev/null | head -3 | paste -sd " " - || true)
+        [ -n "$WATCHER_LEFT" ] && { log "shutdown: FAIL watcher still running: $WATCHER_LEFT"; FAIL=1; }
         END_TS=$(date +%s)
-        if [ "$FAIL" -eq 0 ]; then
+        if [ "$FAIL" -eq 0 ] && [ "$RELEASED" = "yes" ]; then
             log "shutdown: COMPLETE VERIFIED in $((END_TS-START_TS))s"
+        elif [ "$FAIL" -eq 0 ]; then
+            log "shutdown: COMPLETE (tool off) - SMC release unverified (SMC=${RELEASE_SMC:-?} NCR=${RELEASE_NCR:-?}) in $((END_TS-START_TS))s"
         else
             log "shutdown: INCOMPLETE in $((END_TS-START_TS))s"
         fi
