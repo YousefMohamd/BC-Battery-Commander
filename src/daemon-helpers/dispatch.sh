@@ -1164,6 +1164,12 @@ ACTIVE_MODE=$SESSION_MODE
         sudo -n pkill -9 -f "battopt discharge" 2>/dev/null || true
         sudo -n pkill -9 -f "battopt charge" 2>/dev/null || true
         sudo -n pkill -9 -f "battopt calibrate" 2>/dev/null || true
+        # charge_full's bash watcher has a bare `bash -c` cmdline that none of
+        # the patterns above match. Match its embedded log string.
+        pkill -9 -f "charge_full: watcher finished" 2>/dev/null || true
+        # Log the kill step so a future orphan claim is checkable against the
+        # log instead of inferred from silence.
+        log "shutdown: client kills sent (discharge/charge/calibrate/cf_watcher)"
         sleep 1
 
         # 3. Unload user agents FIRST + kill residual watchdogs

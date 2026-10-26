@@ -142,6 +142,15 @@ if [ "$VERIFY" != "$LAST_UPPER" ]; then
     sudo -n "$BAT" limit "$LAST_UPPER" "$LAST_LOWER" >/dev/null 2>&1
 fi
 
+# Post-shutdown overshoot reconciliation: if we relaunched into PCT > UPPER
+# (charging ran unrestricted at 100/99 while tool was off), assert idle so
+# guardian LAYER2 owns the discharge decision — do NOT claim "hold" for a
+# state that is already above the enforced limit.
+if [ -n "$CURRENT_PCT" ] && [ "$CURRENT_PCT" -gt "$LAST_UPPER" ]; then
+    log "Reconciler: PCT=${CURRENT_PCT}% > UPPER=${LAST_UPPER}% post-launch — asserting idle for guardian"
+    echo "idle" > "$DASH/.active_mode"
+fi
+
 # Refresh UI after applying limits
 sleep 2
 touch "$PLUGIN_DIR/battopt.10s.sh"
