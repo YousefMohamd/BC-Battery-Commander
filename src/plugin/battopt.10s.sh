@@ -358,10 +358,20 @@ else
 fi
 fi
 
+# Neutral first render: ioreg missing/invalid only, SMC_PCT unknown or EXT/ISCHG empty.
+# Valid ioreg cases keep their true icon, even if red for seconds before reconciler.
+# Neutral ticks must not pollute audit or last_icon, so audit is guarded below.
+NEUTRAL=0
+if [ "$SMC_PCT" = "?" ] || [ -z "$ICON_EXT" ] || [ -z "$ICON_ISCHG" ]; then
+    NEUTRAL=1
+    ICON="⏳"
+    FINAL_COLOR="color=#909090"
+fi
+
 # R5: icon-transition audit - log only on changes, capped rotation
 AUDIT_LOG="$DASH/.audit.log"
 _prev_icon=$(cat "$DASH/.last_icon" 2>/dev/null)
-if [ "$ICON" != "$_prev_icon" ]; then
+if [ "$NEUTRAL" != "1" ] && [ "$ICON" != "$_prev_icon" ]; then
     printf '[%s] icon %s -> %s (mode=%s ext=%s ischg=%s ncr=%s pct=%s)\n' "$(date '+%H:%M:%S')" "${_prev_icon:-none}" "$ICON" "$ACTIVE_MODE" "${ICON_EXT:-?}" "${ICON_ISCHG:-?}" "${ICON_NCR:-?}" "${SMC_PCT:-?}" >> "$AUDIT_LOG" 2>/dev/null
     echo "$ICON" > "$DASH/.last_icon" 2>/dev/null
     if [ -f "$AUDIT_LOG" ] && [ "$(wc -c < "$AUDIT_LOG" 2>/dev/null | tr -d ' ')" -gt 51200 ]; then
