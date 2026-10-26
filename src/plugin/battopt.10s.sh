@@ -105,7 +105,10 @@ notify_proactive_v2() {
 }
 
 # ============ AUTO RECOVERY ============
-if [ -z "$SNAP" ] || echo "$SNAP" | grep -q "Timeout\|not running"; then
+# F1: Respect shutdown - do not auto-recover daemon after intentional shutdown
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    echo "0" > "$FAIL_FILE" 2>/dev/null || true
+elif [ -z "$SNAP" ] || echo "$SNAP" | grep -q "Timeout\|not running"; then
     FAILS=$(cat "$FAIL_FILE" 2>/dev/null || echo 0)
     FAILS=$((FAILS + 1))
     echo "$FAILS" > "$FAIL_FILE"
