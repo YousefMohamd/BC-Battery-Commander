@@ -1263,7 +1263,9 @@ ACTIVE_MODE=$SESSION_MODE
             LAUNCH_SURVIVORS="${LAUNCH_SURVIVORS} com.battopt.powerwatch"
         fi
         NCR_NOW=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)
-        CFG_EN=$(sudo -n head -c 100 "/Library/Application Support/battopt/battopt_cfg" 2>/dev/null | grep -oE "limit_enable = [01]" || echo "unknown")
+        # S2: Use cat - sudoers allows cat, not head, so CFG check can FAIL when enabled
+        CFG_EN=$(sudo -n cat "/Library/Application Support/battopt/battopt_cfg" 2>/dev/null | grep -oE "limit_enable = [01]" || echo "unknown")
+        [ "$CFG_EN" = "unknown" ] && log "shutdown: WARN cfg unknown"
         FAIL=0
         [ -n "$SURVIVORS" ] && { log "shutdown: FAIL survivors pgrep: $SURVIVORS"; FAIL=1; }
         [ -n "$LAUNCH_SURVIVORS" ] && { log "shutdown: FAIL survivors launchctl: $LAUNCH_SURVIVORS"; FAIL=1; }
