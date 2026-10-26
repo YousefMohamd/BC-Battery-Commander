@@ -5,6 +5,12 @@
 LOG="$HOME/.battopt-swiftbar/actions.log"
 log() { echo "[$(date '+%H:%M:%S')] monitor: $1" >> "$LOG"; }
 
+# S1: Respect shutdown - do not restart anything after intentional shutdown
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    log "shutdown flag present - skipping monitor"
+    exit 0
+fi
+
 # 1. Check duplicate SwiftBar
 COUNT=$(pgrep -x SwiftBar | wc -l | tr -d ' ')
 if [ "$COUNT" -gt 1 ]; then
