@@ -356,6 +356,16 @@ else
 fi
 fi
 
+# R5: icon-transition audit - log only on changes, capped rotation
+AUDIT_LOG="$DASH/.audit.log"
+_prev_icon=$(cat "$DASH/.last_icon" 2>/dev/null)
+if [ "$ICON" != "$_prev_icon" ]; then
+    printf '[%s] icon %s -> %s (mode=%s ext=%s ischg=%s ncr=%s pct=%s)\n' "$(date '+%H:%M:%S')" "${_prev_icon:-none}" "$ICON" "$ACTIVE_MODE" "${ICON_EXT:-?}" "${ICON_ISCHG:-?}" "${ICON_NCR:-?}" "${SMC_PCT:-?}" >> "$AUDIT_LOG" 2>/dev/null
+    echo "$ICON" > "$DASH/.last_icon" 2>/dev/null
+    if [ -f "$AUDIT_LOG" ] && [ "$(wc -c < "$AUDIT_LOG" 2>/dev/null | tr -d ' ')" -gt 51200 ]; then
+        tail -200 "$AUDIT_LOG" > "$AUDIT_LOG.tmp" 2>/dev/null && mv "$AUDIT_LOG.tmp" "$AUDIT_LOG" 2>/dev/null
+    fi
+fi
 echo "${ICON} ${SMC_PCT}% | size=14 ${FINAL_COLOR}"
 echo "---"
 echo "Charge: ${PCT}% | size=11"

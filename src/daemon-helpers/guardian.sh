@@ -30,10 +30,13 @@ guarded() {
 }
 
 heartbeat() {
-        local _ncr
-    _ncr=$(ioreg -rn AppleSmartBattery 2>/dev/null | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)
+        local _ncr _ext _ischg _snap
+    _snap=$(ioreg -rn AppleSmartBattery 2>/dev/null)
+    _ncr=$(echo "$_snap" | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)
+    _ext=$(echo "$_snap" | grep -oE '"ExternalConnected" = [A-Za-z]+' | awk '{print $3}')
+    _ischg=$(echo "$_snap" | grep -oE '"IsCharging" = [A-Za-z]+' | awk '{print $3}')
     [ -z "$_ncr" ] && _ncr="?"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] heartbeat: PCT=$PCT SMC=$SMC_UPPER/$SMC_LOWER cfg=$UPPER/$LOWER NCR=$_ncr" >> "$GUARD_LOG"
+echo "[$(date '+%Y-%m-%d %H:%M:%S')] heartbeat: PCT=$PCT SMC=$SMC_UPPER/$SMC_LOWER cfg=$UPPER/$LOWER NCR=$_ncr EXT=${_ext:-?} IsChg=${_ischg:-?}" >> "$GUARD_LOG"
 }
 
 # ─── Read config ───

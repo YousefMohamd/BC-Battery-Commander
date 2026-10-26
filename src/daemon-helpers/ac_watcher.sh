@@ -23,6 +23,7 @@ log() { echo "[$(date '+%H:%M:%S')] ac_watcher: $1" >> "$LOG"; }
 # Read current AC state
 IOREG=$(ioreg -rn AppleSmartBattery 2>/dev/null)
 EXT=$(echo "$IOREG" | grep -oE '"ExternalConnected" = [A-Za-z]+' | awk '{print $3}')
+_AUDIT_NCR=$(echo "$IOREG" | grep -oE '"NotChargingReason"=[0-9]+' | grep -oE '[0-9]+' | head -1)
 [ -z "$EXT" ] && exit 0
 
 # Read previous state
@@ -38,14 +39,14 @@ if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
     ACTIVE_MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
     [ -z "$ACTIVE_MODE" ] && ACTIVE_MODE="idle"
     if guard_session_active; then
-        log "AC CONNECTED — skipping (active_mode=$ACTIVE_MODE)"
+        log "AC CONNECTED — skipping (active_mode=$ACTIVE_MODE) (NCR=${_AUDIT_NCR:-?})"
         exit 0
     fi
     if [ -f "$DASH/.apg_paused" ]; then
-        log "AC CONNECTED - skipping (APG thermal pause)"
+        log "AC CONNECTED - skipping (APG thermal pause) (NCR=${_AUDIT_NCR:-?})"
         exit 0
     fi
-    log "AC CONNECTED — reapplying intent"
+    log "AC CONNECTED — reapplying intent (NCR=${_AUDIT_NCR:-?})"
     # Read current config
     [ -f "$CONFIG" ] && source "$CONFIG"
     UPPER="${LAST_UPPER:-85}"
@@ -54,5 +55,5 @@ if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
     sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
     log "applied limit $UPPER/$LOWER after AC connect"
 elif [ "$PREV" = "Yes" ] && [ "$EXT" = "No" ]; then
-    log "AC DISCONNECTED — sailing continues on battery"
+    log "AC DISCONNECTED — sailing continues on battery (NCR=${_AUDIT_NCR:-?})"
 fi
