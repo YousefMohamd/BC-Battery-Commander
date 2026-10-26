@@ -7,6 +7,12 @@ HEAL_LOG="$HOME/.battopt-swiftbar/.healing.log"
 
 log() { echo "[$(date '+%H:%M:%S')] heal: $1" >> "$HEAL_LOG"; }
 
+# S5: Hard early exit - never undo a user-intended shutdown
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    log "shutdown flag present - exiting"
+    exit 0
+fi
+
 # 1. SwiftBar running?
 if ! pgrep -x SwiftBar >/dev/null 2>&1; then
     log "SwiftBar down — relaunching"
@@ -56,13 +62,34 @@ if [ ! -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
 fi
 
 # 6. Limit applied?
-STATUS=$(sudo -n battopt status 2>/dev/null)
-if echo "$STATUS" | grep -q "Capacity"; then
-    if echo "$STATUS" | grep -qE "Charge limit is suspended|Charge limit: disabled|Active Limit: disabled" || ! echo "$STATUS" | grep -qE "upper limit 8[0-9]"; then
-        source "$HOME/.battopt-swiftbar/config" 2>/dev/null
-        log "Limit missing — reapplying ${LAST_UPPER:-85}/${LAST_LOWER:-80}"
-        sudo -n /usr/local/bin/battopt limit "${LAST_UPPER:-85}" "${LAST_LOWER:-80}" >> "$LOG" 2>&1
+# Skip when a guarded session owns the SMC (charge_full transient 100/99, discharge target, calibration, hold) or when APG has a thermal pause — both are intentional SMC!=config states, not drift.
+if [ -f "$HOME/.battopt-swiftbar/state_guard.sh" ]; then
+    source "$HOME/.battopt-swiftbar/state_guard.sh"
+    if guard_session_active; then
+        log "limit check skipped — active session ($(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null))"
+    elif [ -f "$HOME/.battopt-swiftbar/.apg_paused" ]; then
+        log "limit check skipped — APG thermal pause"
+    else
+        STATUS=$(sudo -n /usr/local/bin/battopt status 2>/dev/null)
+        if echo "$STATUS" | grep -q "Capacity"; then
+            source "$HOME/.battopt-swiftbar/config" 2>/dev/null
+            UPPER="${LAST_UPPER:-85}"
+            LOWER="${LAST_LOWER:-80}"
+            CUR_U=$(echo "$STATUS" | grep -oE "upper limit [0-9]+" | grep -oE "[0-9]+" | head -1)
+            if echo "$STATUS" | grep -qE "Charge limit is suspended|Charge limit: disabled|Active Limit: disabled"; then
+                log "Limit suspended/disabled — reapplying $UPPER/$LOWER"
+                sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
+            elif [ -z "$CUR_U" ]; then
+                log "No limit reported — applying $UPPER/$LOWER"
+                sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
+            elif [ "$CUR_U" != "$UPPER" ]; then
+                log "Drift: SMC=$CUR_U config=$UPPER — reapplying $UPPER/$LOWER"
+                sudo -n /usr/local/bin/battopt limit "$UPPER" "$LOWER" >> "$LOG" 2>&1
+            fi
+        fi
     fi
+else
+    log "limit check skipped — state_guard missing"
 fi
 
 # 7. Trim healing log
