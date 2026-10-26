@@ -41,6 +41,10 @@ if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
         log "AC CONNECTED — skipping (active_mode=$ACTIVE_MODE)"
         exit 0
     fi
+    if [ -f "$DASH/.apg_paused" ]; then
+        log "AC CONNECTED - skipping (APG thermal pause)"
+        exit 0
+    fi
     log "AC CONNECTED — reapplying intent"
     # Read current config
     [ -f "$CONFIG" ] && source "$CONFIG"

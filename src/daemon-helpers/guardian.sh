@@ -186,7 +186,9 @@ if [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
             NOW=$(date +%s)
             SINCE=$(cat "$HOLD_SINCE" 2>/dev/null || echo "$NOW")
             AGE=$((NOW - SINCE))
-            if [ "$AGE" -gt 300 ]; then
+            if [ -f "$HOME/.battopt-swiftbar/.apg_paused" ]; then
+                log "LAYER3: APG thermal pause - skipping drift reapply (hold ${AGE}s SMC=$SMC_UPPER config=$UPPER)"
+            elif [ "$AGE" -gt 300 ]; then
                 log "LAYER3: hold ${AGE}s drift SMC=$SMC_UPPER config=$UPPER — force reapply"
                 sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
                 date +%s > "$HOLD_SINCE"
@@ -195,8 +197,12 @@ if [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" != "$UPPER" ]; then
             fi
             ;;
         *)
+            if [ -f "$HOME/.battopt-swiftbar/.apg_paused" ]; then
+                log "LAYER3: APG thermal pause - skipping drift reapply (mode=$AM_L3 SMC=$SMC_UPPER config=$UPPER)"
+            else
             log "LAYER3: drift SMC=$SMC_UPPER config=$UPPER — reapply (mode=$AM_L3)"
             sudo -n "$BAT" limit "$UPPER" "$LOWER" >/dev/null 2>&1
+            fi
             ;;
     esac
 fi
@@ -375,6 +381,10 @@ ncr_monitor() {
 # === LAYER 10: SMC ↔ Config Drift Check ===
 # If the SMC limit does not match config, reapply and log.
 smc_drift_check() {
+    if [ -f "$HOME/.battopt-swiftbar/.apg_paused" ]; then
+        log "L10: APG thermal pause - skipping drift check"
+        return 0
+    fi
     source "$HOME/.battopt-swiftbar/config" 2>/dev/null
     local want_upper="${LAST_UPPER:-85}"
     local want_lower="${LAST_LOWER:-80}"

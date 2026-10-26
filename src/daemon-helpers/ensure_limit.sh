@@ -24,6 +24,10 @@ if [ -f "$HOME/.battopt-swiftbar/.sd_session" ]; then
 fi
 # === END GUARD ===
 
+if [ -f "$HOME/.battopt-swiftbar/.apg_paused" ]; then
+    echo "[$(date '+%H:%M:%S')] ensure_limit: APG thermal pause - skipping" >> "$LOG"
+    exit 0
+fi
 UPPER="${LAST_UPPER:-85}"
 LOWER="${LAST_LOWER:-80}"
 
