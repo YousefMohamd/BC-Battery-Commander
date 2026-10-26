@@ -1254,7 +1254,8 @@ ACTIVE_MODE=$SESSION_MODE
 
         # 12. Verification gate
         sleep 1
-        SURVIVORS=$(pgrep -fl 'battopt|powerwatch|sd_watcher|guardian|enforce_watchdog' 2>/dev/null | grep -v "dispatch.sh" || true)
+        # S3: Include capital BattOpt so surviving applet is counted
+        SURVIVORS=$(pgrep -fl 'battopt|BattOpt|powerwatch|sd_watcher|guardian|enforce_watchdog' 2>/dev/null | grep -v "dispatch.sh" || true)
         LAUNCH_SURVIVORS=""
         if ! sudo -n launchctl print system/com.buddha-path.BattOpt.daemon 2>&1 | grep -q "Could not find service"; then
             LAUNCH_SURVIVORS="com.buddha-path.BattOpt.daemon"
