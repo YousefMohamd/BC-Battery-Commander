@@ -252,8 +252,8 @@ case "$ACTIVE_MODE" in
         ;;
 esac
 
-# Battery-first: on battery, show red regardless of mode (user decision 03:01)
-if [ "$ICON_EXT" = "No" ] && [ "$ICON_ISCHG" = "No" ]; then
+# Battery: on battery, show red except verified discharge (discharge keeps battery icon)
+if [ "$ICON_EXT" = "No" ] && [ "$ICON_ISCHG" = "No" ] && [ "$ACTIVE_MODE" != "discharge" ]; then
     ICON="🔴"
 fi
 fi

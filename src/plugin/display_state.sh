@@ -27,10 +27,10 @@ fi
 if [ "$DISPLAY_MODE" != "discharge" ] && pgrep -f "battopt discharge" >/dev/null 2>&1; then
     DISPLAY_MODE="discharge"
 fi
-if [ "$ICON_EXT" = "No" ] && [ "$ICON_ISCHG" = "No" ]; then
-    ICON="🔴"
-elif [ "$DISPLAY_MODE" = "discharge" ]; then
+if [ "$DISPLAY_MODE" = "discharge" ]; then
     ICON="🔋"
+elif [ "$ICON_EXT" = "No" ] && [ "$ICON_ISCHG" = "No" ]; then
+    ICON="🔴"
 elif [ "$DISPLAY_MODE" = "charge_full" ] || [ "$DISPLAY_MODE" = "calibration" ]; then
     ICON="⚡"
 elif [ "$ICON_ISCHG" = "Yes" ]; then
