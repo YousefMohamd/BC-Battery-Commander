@@ -196,6 +196,25 @@ ICON_MAXCAP=$(echo "$IOREG_DATA" | grep -oE '"MaxCapacity" = [0-9]+' | awk '{pri
 [ -z "$ICON_CHCUR" ] && ICON_CHCUR=0
 [ -z "$ICON_NCR" ] && ICON_NCR=0
 
+# Display-state system (separate, read-only): primary decision, original logic below is fallback
+DISPLAY_OK=0
+DISPLAY_HELPER=""
+if [ -x "$HOME/.battopt-swiftbar/display_state.sh" ]; then
+    DISPLAY_HELPER="$HOME/.battopt-swiftbar/display_state.sh"
+elif [ -x "$(dirname "$0")/display_state.sh" ]; then
+    DISPLAY_HELPER="$(dirname "$0")/display_state.sh"
+fi
+if [ -n "$DISPLAY_HELPER" ]; then
+    DISPLAY_OUT=$(DISPLAY_MODE="$ACTIVE_MODE" TEMP_INT="${TEMP_INT:-}" "$DISPLAY_HELPER" 2>/dev/null) || DISPLAY_OUT=""
+    case "$DISPLAY_OUT" in
+        *ICON=*FINAL_COLOR=*)
+            eval "$DISPLAY_OUT"
+            ACTIVE_MODE="$DISPLAY_MODE"
+            DISPLAY_OK=1
+            ;;
+    esac
+fi
+if [ "$DISPLAY_OK" != "1" ]; then
 # Hardware-first override: silent hold detection
 if [ "$ICON_NCR" = "14" ] && [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ] && \
    [ "$ACTIVE_MODE" != "discharge" ] && [ "$ACTIVE_MODE" != "calibration" ]; then
@@ -233,6 +252,7 @@ esac
 # Battery-first: on battery, show red regardless of mode (user decision 03:01)
 if [ "$ICON_EXT" = "No" ] && [ "$ICON_ISCHG" = "No" ]; then
     ICON="🔴"
+fi
 fi
 
 if [ -n "$ICON_CURCAP" ] && [ -n "$ICON_MAXCAP" ] && [ "$ICON_MAXCAP" -gt 0 ] 2>/dev/null; then
@@ -313,6 +333,7 @@ else
     ALERT_COLOR=""
 fi
 
+if [ "$DISPLAY_OK" != "1" ]; then
 if [ "$ICON_ISCHG" = "Yes" ] && [ "$ICON_CHCUR" -gt 50 ] 2>/dev/null; then
     STATE_COLOR="color=#707070"
 elif [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
@@ -329,6 +350,7 @@ elif [ -n "$TEMP_INT" ] && [ "$TEMP_INT" -ge 38 ] 2>/dev/null; then
     FINAL_COLOR="color=#FF9500"
 else
     FINAL_COLOR="$STATE_COLOR"
+fi
 fi
 
 echo "${ICON} ${SMC_PCT}% | size=14 ${FINAL_COLOR}"
