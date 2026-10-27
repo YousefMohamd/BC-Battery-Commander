@@ -1654,6 +1654,7 @@ ${USB_DEV:-  none detected}
         
         MSG="${MSG}${ISSUES}"
         
+        MSG=$(printf '%s' "$MSG" | tr '"`\\$' '____')
         RESULT=$(osascript << AS
 try
     set d to display dialog "${MSG}" buttons {"Close", "Save Full Report", "Toggle Saver"} default button "Close" with title "BattOpt Sleep Report" with icon note
