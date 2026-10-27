@@ -911,6 +911,54 @@ CFGEOF
         intent_apply charge_full ;;
 
 
+    charge_to_upper)
+        acquire; ensure_clean
+        log "charge_to_upper: START"
+        release
+        BAT="${BAT:-/usr/local/bin/battopt}"
+        DASH="${DASH:-$HOME/.battopt-swiftbar}"
+        LOG="${LOG:-$HOME/.battopt-swiftbar/actions.log}"
+        if [ -f "$DASH/.user_shutdown" ]; then
+            notify "BattOpt" "Charge to upper cancelled (shutdown)"
+        elif [ "$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')" = "discharge" ] || [ "$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')" = "charge_full" ] || [ "$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')" = "calibration" ]; then
+            notify "BattOpt" "Charge to upper cancelled (active session)"
+        else
+            source "$DASH/config" 2>/dev/null
+            U=${LAST_UPPER:-86}
+            L=${LAST_LOWER:-85}
+            V=$(_verify_smc_upper)
+            if [ "$V" != "$U" ]; then
+                run_with_retry limit "$U" "$L" >> "$LOG" 2>&1
+                V=$(_verify_smc_upper)
+            fi
+            if [ "$V" != "$U" ]; then
+                notify "BattOpt" "Charge to upper cancelled (SMC=$V, want $U)"
+            elif ! pmset -g batt 2>/dev/null | head -1 | grep -q "AC Power"; then
+                notify "BattOpt" "Charge to upper cancelled (AC not attached)"
+            else
+                CUR=$(get_pct)
+                if [ -z "$CUR" ]; then
+                    notify "BattOpt" "Charge to upper cancelled (no battery reading)"
+                elif [ "$CUR" -ge "$U" ]; then
+                    notify "BattOpt" "Charge to upper not needed (CUR=$CUR, UPPER=$U)"
+                elif pgrep -f "battopt charge" >/dev/null 2>&1; then
+                    notify "BattOpt" "Charge to upper cancelled (charge already running)"
+                elif [ -f "$DASH/.charge_upper_token" ] && pgrep -f "charge_upper_watcher" >/dev/null 2>&1; then
+                    notify "BattOpt" "Charge to upper already running"
+                else
+                    [ -f "$DASH/.charge_upper_token" ] && rm -f "$DASH/.charge_upper_token"
+                    TOKEN=$(printf '%s_%s_%s' "$$" "$(date +%s)" "charge_upper")
+                    printf '%s\n' "$TOKEN" > "$DASH/.charge_upper_token.tmp.$$" && mv "$DASH/.charge_upper_token.tmp.$$" "$DASH/.charge_upper_token"
+                    nohup sudo -n "$BAT" charge "$U" >/dev/null 2>&1 &
+                    disown
+                    nohup "$DASH/charge_upper_watcher.sh" "$BAT" "$DASH" "$LOG" "$TOKEN" "$U" >/dev/null 2>&1 &
+                    disown
+                    notify "BattOpt" "Charging to $U% (watcher active)"
+                fi
+            fi
+        fi
+        ;;
+
     smart_discharge)
         acquire; ensure_clean
         CUR=$(get_pct); [ -z "$CUR" ] && { release; exit 1; }
