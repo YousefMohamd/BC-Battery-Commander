@@ -1248,10 +1248,10 @@ ACTIVE_MODE=$SESSION_MODE
             [ -f "$plist" ] || continue
             launchctl unload -w "$plist" 2>/dev/null
         done
-        pkill -9 -f "guardian" 2>/dev/null || true
-        pkill -9 -f "enforce_watchdog" 2>/dev/null || true
-        pkill -9 -f "consolidated" 2>/dev/null || true
-        pkill -9 -f "self-healing" 2>/dev/null || true
+        pkill -9 -f "$HOME/.battopt-swiftbar/guardian.sh" 2>/dev/null || true
+        pkill -9 -f "$HOME/.battopt-swiftbar/enforce_watchdog.sh" 2>/dev/null || true
+        pkill -9 -f "$HOME/.battopt-swiftbar/consolidated_checks.sh" 2>/dev/null || true
+        pkill -9 -f "$HOME/.battopt-swiftbar/self_healing.sh" 2>/dev/null || true
         pkill -9 -f "sd_watcher" 2>/dev/null || true
         log "shutdown: agents unloaded (guardian/enforce/consolidated/self-healing/sd_watcher killed)"
         # 3b. Residual kill pass AFTER unload (agents could respawn a client between step 2 and step 3)
