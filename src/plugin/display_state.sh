@@ -28,7 +28,9 @@ if [ "$DISPLAY_MODE" = "discharge" ]; then
         fi
     fi
 fi
-if [ "$DISPLAY_MODE" != "discharge" ] && pgrep -f "battopt discharge" >/dev/null 2>&1; then
+_PROMOTE_OK=0
+case "$PCT_IN" in ''|*[!0-9]*) ;; *) case "$LIMIT_IN" in ''|*[!0-9]*) ;; *) [ "$PCT_IN" -gt "$LIMIT_IN" ] && _PROMOTE_OK=1 ;; esac ;; esac
+if [ "$DISPLAY_MODE" != "discharge" ] && [ "$_PROMOTE_OK" = "1" ] && pgrep -f "battopt discharge" >/dev/null 2>&1; then
     DISPLAY_MODE="discharge"
 fi
 if [ "$DISPLAY_MODE" = "discharge" ]; then

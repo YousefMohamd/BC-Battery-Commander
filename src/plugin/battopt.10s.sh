@@ -208,7 +208,7 @@ elif [ -x "$(dirname "$0")/display_state.sh" ]; then
     DISPLAY_HELPER="$(dirname "$0")/display_state.sh"
 fi
 if [ -n "$DISPLAY_HELPER" ]; then
-    DISPLAY_OUT=$(DISPLAY_MODE="$ACTIVE_MODE" TEMP_INT="${TEMP_INT:-}" "$DISPLAY_HELPER" 2>/dev/null) || DISPLAY_OUT=""
+    DISPLAY_OUT=$(DISPLAY_MODE="$ACTIVE_MODE" TEMP_INT="${TEMP_INT:-}" PCT_IN="$PCT" LIMIT_IN="${LAST_UPPER:-${UPPER:-80}}" "$DISPLAY_HELPER" 2>/dev/null) || DISPLAY_OUT=""
     case "$DISPLAY_OUT" in
         *ICON=*FINAL_COLOR=*)
             eval "$DISPLAY_OUT"
@@ -234,7 +234,9 @@ if [ "$ACTIVE_MODE" = "discharge" ]; then
 fi
 
 # Fallback: if discharge process is running but ACTIVE_MODE is stale, fix it
-if [ "$ACTIVE_MODE" != "discharge" ] && pgrep -f "battopt discharge" >/dev/null 2>&1; then
+_PROMOTE_OK=0
+case "$PCT" in ''|*[!0-9]*) ;; *) case "${LAST_UPPER:-${UPPER:-80}}" in ''|*[!0-9]*) ;; *) [ "$PCT" -gt "${LAST_UPPER:-${UPPER:-80}}" ] && _PROMOTE_OK=1 ;; esac ;; esac
+if [ "$ACTIVE_MODE" != "discharge" ] && [ "$_PROMOTE_OK" = "1" ] && pgrep -f "battopt discharge" >/dev/null 2>&1; then
     ACTIVE_MODE="discharge"
 fi
 
