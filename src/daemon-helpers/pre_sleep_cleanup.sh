@@ -1,5 +1,5 @@
 #!/bin/bash
-HOME="${HOME:-/Users/Yousef}"
+if [ -z "$HOME" ]; then echo "ERROR: HOME is unset, refusing to guess user" >&2; exit 1; fi
 # Pre-Sleep Cleanup — Simplified
 # Only stop audio apps (the real blocker for deep sleep)
 # Spotlight, Time Machine, Photos don't need stopping if Hibernatemode 25 works

@@ -1295,7 +1295,7 @@ ACTIVE_MODE=$SESSION_MODE
         sudo -n launchctl disable system/com.buddha-path.BattOpt.daemon 2>/dev/null || true
         sleep 2
         sudo -n pkill -9 -f "Application Support/battopt/battopt daemon" 2>/dev/null || true
-        sudo -n rm -f "/Library/Application Support/battopt/battopt.sock" 2>/dev/null || true
+        # socket rm removed: sudoers allows .sys_info only, rm was ineffective, reopen proven without it
         if sudo -n launchctl print system/com.buddha-path.BattOpt.daemon 2>&1 | grep -q "Could not find service"; then
             log "shutdown: daemon stopped+disabled verified"
         else

@@ -1,5 +1,5 @@
 #!/bin/bash
-HOME="${HOME:-/Users/Yousef}"
+if [ -z "$HOME" ]; then echo "ERROR: HOME is unset, refusing to guess user" >&2; exit 1; fi
 [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
 
 # Local notify — fallback if running standalone

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Auto Cleanup — idle-triggered service pause/restore (v1.3.0)
-HOME="${HOME:-/Users/Yousef}"
+if [ -z "$HOME" ]; then echo "ERROR: HOME is unset, refusing to guess user" >&2; exit 1; fi
 DASH="$HOME/.battopt-swiftbar"
 FLAG="$DASH/.auto_cleanup"
 DONE="$DASH/.pre_sleep_done"

@@ -1,5 +1,5 @@
 #!/bin/bash
-HOME="${HOME:-/Users/Yousef}"
+if [ -z "$HOME" ]; then echo "ERROR: HOME is unset, refusing to guess user" >&2; exit 1; fi
 # Post-Wake Restore — Minimal
 # Spotlight, Photos, TM auto-restore when RAM is on
 
