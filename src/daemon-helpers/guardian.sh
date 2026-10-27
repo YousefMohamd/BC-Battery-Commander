@@ -272,6 +272,7 @@ if [ -f "$SESSION_FILE" ]; then
                 rm -f "$SESSION_FILE" "$HOME/.battopt-swiftbar/.active_token"
                 echo "hold" > "$HOME/.battopt-swiftbar/.active_mode"
                 date +%s > "$HOME/.battopt-swiftbar/.hold_since"
+                date +%s > "$HOME/.battopt-swiftbar/.layer4b_hold"
             else
                 log "LAYER4b: phantom session (${PHANTOM_AGE}s, mode=${AM_PH:-idle}, AC=${AC_PH:-?}, no discharge) — clearing"
                 rm -f "$SESSION_FILE"

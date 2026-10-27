@@ -38,6 +38,15 @@ if [ "$PREV" = "No" ] && [ "$EXT" = "Yes" ]; then
     # Respect active session — do NOT override charge_full / discharge / calibration
     ACTIVE_MODE=$(cat "$DASH/.active_mode" 2>/dev/null | tr -d '[:space:]')
     [ -z "$ACTIVE_MODE" ] && ACTIVE_MODE="idle"
+    # H1: clear LAYER4b auto-hold on AC reconnect (user hold has no marker)
+    if [ -f "$DASH/.layer4b_hold" ] || [ -f "$HOME/.battopt-swiftbar/.layer4b_hold" ]; then
+        if [ "$ACTIVE_MODE" = "hold" ]; then
+            rm -f "$DASH/.layer4b_hold" "$HOME/.battopt-swiftbar/.layer4b_hold"
+            echo "idle" > "$DASH/.active_mode"
+            log "AC CONNECTED - clearing LAYER4b hold, resuming to limit"
+            ACTIVE_MODE="idle"
+        fi
+    fi
     if guard_session_active; then
         log "AC CONNECTED — skipping (active_mode=$ACTIVE_MODE) (NCR=${_AUDIT_NCR:-?})"
         exit 0
