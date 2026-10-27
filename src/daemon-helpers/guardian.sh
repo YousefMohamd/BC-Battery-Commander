@@ -165,7 +165,10 @@ AM_L3=$(cat "$HOME/.battopt-swiftbar/.active_mode" 2>/dev/null | tr -d '[:space:
 # Only fire when no session is active — a live discharge / charge_full /
 # calibration will also briefly show NCR=14 during transitions, and we must
 # not overwrite its .active_mode.
-if [ "$NCR" = "14" ] && [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" = "$UPPER" ] && [ "$AM_L3" = "idle" ] && [ ! -f "$SESSION_FILE" ]; then
+# L3a guard: only correct to hold at/above upper; below upper idle is correct and charging must proceed
+_L3A_PCT_OK=0
+case "$PCT" in ''|*[!0-9]*) ;; *) [ "$PCT" -ge "$UPPER" ] 2>/dev/null && _L3A_PCT_OK=1 ;; esac
+if [ "$NCR" = "14" ] && [ -n "$SMC_UPPER" ] && [ "$SMC_UPPER" = "$UPPER" ] && [ "$AM_L3" = "idle" ] && [ ! -f "$SESSION_FILE" ] && [ "$_L3A_PCT_OK" = "1" ]; then
     log "LAYER3a: silent hold detected (NCR=14, SMC=$SMC_UPPER=cfg=$UPPER, mode=$AM_L3) — correcting"
     MODE_FILE="$HOME/.battopt-swiftbar/.active_mode"
     TMP="$MODE_FILE.tmp.$$"
