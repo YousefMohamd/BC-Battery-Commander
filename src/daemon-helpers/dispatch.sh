@@ -1271,6 +1271,7 @@ ACTIVE_MODE=$SESSION_MODE
         # 9. Purge state files
         for _sf in .sd_session .sd_watch .active_mode .charge_target \
                    .hold_override .hold_token .pre_hold_config \
+                   .layer4b_hold \
                    .armed_for_sleep .status_cache \
                    .enforce_hb .enforce_state .ac_state .ncr_state \
                    .sleep_prediction .current_power_mode \
