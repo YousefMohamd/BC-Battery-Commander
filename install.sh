@@ -111,6 +111,7 @@ fi
 for plist in "$ROOT"/src/agents/*.plist; do
     [ -f "$plist" ] || continue
     copy_with_backup "$plist" "$AGENT_DIR/$(basename "$plist")"
+    sed -i '' "s|/Users/Yousef|$HOME|g" "$AGENT_DIR/$(basename "$plist")"
 done
 
 # 6. Install system daemon plists
@@ -121,6 +122,7 @@ for plist in "$ROOT"/src/agents/system/*.plist; do
         sudo cp -p "$dst" "$BACKUP/root-plist-$(basename "$plist")"
     fi
     sudo install -o root -g wheel -m 0644 "$plist" "$dst"
+    sudo sed -i '' "s|/Users/Yousef|$HOME|g" "$dst"
 done
 
 # 7. Install or rebuild the complete BattOpt.app bundle.
