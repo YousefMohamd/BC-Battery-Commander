@@ -343,7 +343,7 @@ _verify_smc_upper() {
         | head -1
 }
 
-intent_apply() {
+intent_apply_inner() {
     local kind="$1"; shift
     local U L T CUR V MODE GAP TOKEN
     local D="$DASH"
@@ -644,6 +644,15 @@ intent_apply() {
             return 1
             ;;
     esac
+}
+
+intent_apply() {
+    intent_apply_inner "$@"
+    local rc=$?
+    if [ "$rc" -eq 0 ]; then
+        rm -f "$DASH/.layer4b_hold" "$HOME/.battopt-swiftbar/.layer4b_hold" 2>/dev/null || true
+    fi
+    return "$rc"
 }
 
 # === END INTENT APPLY ===
