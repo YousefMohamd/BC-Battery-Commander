@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Layer 15: throttle on battery (30s — but detect AC return fast)
-source "/Users/Yousef/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null
+source "$HOME/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null
 
 # ac_watcher.sh — detect AC state transitions and reapply intent
 # Runs every 10 seconds via LaunchAgent

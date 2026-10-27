@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Layer 15: battery-mode throttle
-source "/Users/Yousef/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null && ac_throttle "guardian" 300
+source "$HOME/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null && ac_throttle "guardian" 300
 
 # State Guardian — monitors and corrects state drift
 # Runs every 2 minutes via LaunchAgent

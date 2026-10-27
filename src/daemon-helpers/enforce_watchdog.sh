@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Layer 15: battery-mode throttle (60s on battery)
-source "/Users/Yousef/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null && ac_throttle "enforce" 60
+source "$HOME/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null && ac_throttle "enforce" 60
 
 # enforce_watchdog.sh — Layer 12: OS-level enforcement
 # Trusts SMC, not battopt exit code.

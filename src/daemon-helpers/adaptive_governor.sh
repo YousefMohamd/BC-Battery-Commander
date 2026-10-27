@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Layer 15: battery-mode throttle
-source "/Users/Yousef/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null && ac_throttle "adaptive_governor" 300
+source "$HOME/.battopt-swiftbar/.throttle_helper.sh" 2>/dev/null && ac_throttle "adaptive_governor" 300
 
 # Adaptive Power Governor — pause charging when hot or under load
 LOG="$HOME/.battopt-swiftbar/actions.log"
