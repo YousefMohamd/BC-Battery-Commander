@@ -6,6 +6,12 @@ DATA="$HOME/.battopt-swiftbar/predictive_data"
 mkdir -p "$DATA"
 
 log() { echo "[$(date '+%H:%M:%S')] predict: $1" >> "$LOG"; }
+# Guard: respect shutdown
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    log "shutdown flag present - skipping predict"
+    exit 0
+fi
+
 
 STAMP=$(date +%Y%m%d_%H)
 SNAP="$DATA/snap_$STAMP.txt"

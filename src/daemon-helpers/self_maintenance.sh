@@ -2,6 +2,12 @@
 LOG="$HOME/.battopt-swiftbar/maintenance.log"; exec >> "$LOG" 2>&1
 DASH="$HOME/.battopt-swiftbar"
 FAIL_REASON=""
+# Guard: respect shutdown
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    echo "shutdown flag present - skipping selfmaintenance"
+    exit 0
+fi
+
 
 # 1. Daemon responsive
 if ! sudo -n /usr/local/bin/battopt status >/dev/null 2>&1; then

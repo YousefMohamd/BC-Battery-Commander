@@ -8,6 +8,12 @@ LOG="$DASH/.sleep_manager.log"
 CFG="$DASH/sleep_manager.conf"
 
 log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
+# Guard: respect shutdown
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    log "shutdown flag present - skipping sleep_manager"
+    exit 0
+fi
+
 
 # ── Config (can be overridden by user) ──
 

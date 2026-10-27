@@ -9,6 +9,12 @@ STATE_FILE="$HOME/.battopt-swiftbar/.apg_state"
 PAUSED_FILE="$HOME/.battopt-swiftbar/.apg_paused"
 
 log() { echo "[$(date '+%H:%M:%S')] apg: $1" >> "$LOG"; }
+# Guard: respect shutdown
+if [ -f "$HOME/.battopt-swiftbar/.user_shutdown" ]; then
+    log "shutdown flag present - skipping apg"
+    exit 0
+fi
+
 
 [ -f "$HOME/.battopt-swiftbar/.apg_off" ] && exit 0
 
