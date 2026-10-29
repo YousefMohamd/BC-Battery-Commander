@@ -89,7 +89,7 @@ if [ "$ACTIVE_MODE" = "charge_full" ] || [ "$ACTIVE_MODE" = "discharge" ] || [ "
     log "L18: skipping LAYER2 (active_mode=$ACTIVE_MODE)"
     # Skip overshoot logic
 else
-OVERSHOOT=$UPPER
+OVERSHOOT=$((UPPER + 2))
 # Only trigger if on AC (discharge to upper makes sense with charger)
 AC_NOW=$(pmset -g batt 2>/dev/null | grep -q "AC Power" && echo "yes" || echo "no")
 if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ]; then
