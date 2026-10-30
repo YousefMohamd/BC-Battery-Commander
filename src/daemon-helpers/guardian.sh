@@ -95,7 +95,25 @@ AC_NOW=$(pmset -g batt 2>/dev/null | grep -q "AC Power" && echo "yes" || echo "n
 if [ -f "$HOME/.battopt-swiftbar/.apg_paused" ] && [ "$PCT" -gt "$OVERSHOOT" ]; then
     log "LAYER2: skipping discharge (APG thermal pause)"
 fi
-if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ] && [ ! -f "$HOME/.battopt-swiftbar/.apg_paused" ]; then
+WAKE_DELAY=0
+if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ]; then
+    WAKE_AGE=999999
+    LAST_WAKE_LINE=$(pmset -g log 2>/dev/null | awk '$4=="Wake" && $5=="Wake"' | tail -1)
+    if [ -n "$LAST_WAKE_LINE" ]; then
+        WAKE_TS=$(echo "$LAST_WAKE_LINE" | awk '{print $1" "$2" "$3}')
+        WAKE_EPOCH=$(date -j -f "%Y-%m-%d %H:%M:%S %z" "$WAKE_TS" "+%s" 2>/dev/null)
+        if [ -n "$WAKE_EPOCH" ]; then
+            NOW_EPOCH=$(date +%s)
+            WAKE_AGE=$((NOW_EPOCH - WAKE_EPOCH))
+            [ "$WAKE_AGE" -lt 0 ] && WAKE_AGE=999999
+        fi
+    fi
+    if [ "$WAKE_AGE" -lt 600 ] && [ "$PCT" -lt 95 ]; then
+        log "LAYER2: skipping discharge (post-wake delay ${WAKE_AGE}s < 600s)"
+        WAKE_DELAY=1
+    fi
+fi
+if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ] && [ ! -f "$HOME/.battopt-swiftbar/.apg_paused" ] && [ "$WAKE_DELAY" -eq 0 ]; then
     # Check if discharge already running
     if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
         log "LAYER2: overshoot detected (PCT=$PCT > UPPER=$UPPER)"
