@@ -92,7 +92,10 @@ else
 OVERSHOOT=$((UPPER + 2))
 # Only trigger if on AC (discharge to upper makes sense with charger)
 AC_NOW=$(pmset -g batt 2>/dev/null | grep -q "AC Power" && echo "yes" || echo "no")
-if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ]; then
+if [ -f "$HOME/.battopt-swiftbar/.apg_paused" ] && [ "$PCT" -gt "$OVERSHOOT" ]; then
+    log "LAYER2: skipping discharge (APG thermal pause)"
+fi
+if [ "$PCT" -gt "$OVERSHOOT" ] && [ "$AC_NOW" = "yes" ] && [ ! -f "$HOME/.battopt-swiftbar/.apg_paused" ]; then
     # Check if discharge already running
     if ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
         log "LAYER2: overshoot detected (PCT=$PCT > UPPER=$UPPER)"
