@@ -20,6 +20,16 @@ LOG="$HOME/.battopt-swiftbar/actions.log"
 log() { echo "[$(date '+%H:%M:%S')] arm_sleep: $1" >> "$LOG"; }
 
 log "=== ARM SLEEP START ==="
+# Prepare warning: sleep on charger below upper risks overshoot (enforcement pauses during sleep)
+if [ -f "$HOME/.battopt-swiftbar/config" ]; then
+    source "$HOME/.battopt-swiftbar/config" 2>/dev/null
+fi
+WARN_UPPER="${LAST_UPPER:-85}"
+WARN_PCT=$(pmset -g batt 2>/dev/null | grep -oE '[0-9]+%' | head -1 | tr -d '%')
+if [ -n "$WARN_PCT" ] && [ "$WARN_PCT" -lt "$WARN_UPPER" ] 2>/dev/null && pmset -g batt 2>/dev/null | grep -q "AC Power"; then
+    log "WARNING: sleep on charger risk — Battery ${WARN_PCT}% < limit ${WARN_UPPER}%, charger attached, enforcement pauses during sleep, overshoot possible — unplug or wait for stable hold before sleeping"
+    notify "BattOpt" "⚠ Sleep on charger risk: ${WARN_PCT}% < ${WARN_UPPER}%, charger attached — unplug or wait for hold before sleeping"
+fi
 
 # Keep the selected sleep policy when preparing to sleep.
 SLEEP_PROFILE=$(cat "$HOME/.battopt-swiftbar/.sleep_profile" 2>/dev/null)
