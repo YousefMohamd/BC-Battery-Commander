@@ -3,8 +3,20 @@
 # Detects and cleans polluted/orphaned state files.
 # Runs every 5 minutes.
 
-DASH="$HOME/.battopt-swiftbar"
+# BC state dir: ~/.battery-commander/ is the ONLY live state dir
+# (consolidation 2026-11-13, M2: the old-dir fallback is retired — the
+# pre-migration dir is a kept, inert backup and must never be read or
+# written as a live target). BC_DASH overrides (tests / dry-runs).
+if [ -n "${BC_DASH:-}" ]; then
+    DASH="$BC_DASH"
+elif [ -d "$HOME/.battery-commander" ]; then
+    DASH="$HOME/.battery-commander"
+else
+    echo "ERROR: Battery Commander state dir missing - ~/.battery-commander not found; refusing to run (old-dir fallback retired)" >&2
+    exit 1
+fi
 LOG="$DASH/.hygiene.log"
+BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG"; }
 
@@ -63,20 +75,19 @@ if [ "$HAS_PREHOLD" = "1" ] && [ "$HAS_OVERRIDE" = "0" ]; then
     CLEANED=$((CLEANED + 1))
 fi
 
-# ─── 2. Session file — should match a running discharge ───
-# H2: skip when dispatch.sh holds a lock. intent_apply writes .sd_session
-# and then spawns the discharge process; if we tick between those two
-# steps without this check, we orphan the discharge from its watcher.
+# ─── 2. Session file — BC v1 has no discharge process ───
+# H2: skip when dispatch.sh holds a lock (same reasoning as before).
+# Otherwise any .sd_session is legacy/stale: dispatch never creates
+# it in BC v1 (it only invalidates/removes it), and no BC discharge
+# process exists to own it.
 if [ -f "$DASH/.sd_session" ]; then
     if guard_is_locked; then
         log "hygiene: lock held — deferring .sd_session cleanup"
-    elif ! pgrep -f "battopt discharge" >/dev/null 2>&1; then
+    else
         SES=$(cat "$DASH/.sd_session" 2>/dev/null | tr -d '[:space:]')
-        if [ -n "$SES" ]; then
-            log "hygiene: stale .sd_session ($SES) — no discharge process"
-            rm -f "$DASH/.sd_session"
-            CLEANED=$((CLEANED + 1))
-        fi
+        log "hygiene: stale .sd_session ($SES) — BC v1 has no discharge process"
+        rm -f "$DASH/.sd_session"
+        CLEANED=$((CLEANED + 1))
     fi
 fi
 
@@ -128,6 +139,11 @@ if [ -d "$DASH/.notify" ]; then
         [ -f "$f" ] || continue
         NAME=$(basename "$f")
         case "$NAME" in
+            # hold_reached_session is OWNED by the plugin (once-per-hold-
+            # session dedup for "Battery at Limit"): deleting it re-arms
+            # the notification every hour (audit 2026-11-11, M1). The
+            # plugin clears it when the hold ends or the limit changes.
+            hold_reached_session) continue ;;
             temp_critical|temp_high) MAX=1800 ;;
             low_batt|battery_low_warning) MAX=1800 ;;
             battery_critical) MAX=900 ;;
@@ -144,7 +160,7 @@ fi
 if [ -f "$LOG" ]; then
     SIZE=$(wc -c < "$LOG" 2>/dev/null | tr -d ' ')
     if [ "${SIZE:-0}" -gt 51200 ]; then
-        tail -200 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
+        tail -200 "$LOG" > "$LOG.tmp.$$" && mv "$LOG.tmp.$$" "$LOG"
         log "hygiene: log trimmed (was ${SIZE}B)"
     fi
 fi
@@ -170,29 +186,43 @@ if [ -f "$DASH/.active_mode" ]; then
                 if [ -f "$DASH/.hold_override" ]; then
                     : # explicit hold — keep
                 else
-                    SMC_UP=$(sudo -n /usr/local/bin/battopt status 2>/dev/null \
-                        | grep -oE 'upper limit [0-9]+' \
-                        | grep -oE '[0-9]+' | head -1)
-                    WANT_UP=85
-                    [ -f "$DASH/config" ] && source "$DASH/config" 2>/dev/null
-                    WANT_UP="${LAST_UPPER:-85}"
-                    if [ -z "$SMC_UP" ]; then
-                        : # daemon down — leave hold; guardian LAYER8/LAYER3 resolves
-                    elif [ "$SMC_UP" = "$WANT_UP" ]; then
-                        : # SMC matches config — legitimate hold, keep
+                    # BC: the hold signal is BCLM (10 = holding),
+                    # read via bc-status (read-only). Unreadable
+                    # -> preserve (never clear on a read failure).
+                    BC_OUT=""
+                    [ -x "$BC_BUILD_DIR/bc-status" ] && BC_OUT=$("$BC_BUILD_DIR/bc-status" 2>/dev/null)
+                    BCLM_VAL=$(echo "$BC_OUT" | grep '^BCLM:' | grep -oE '[0-9]+' | head -1)
+                    if [ -z "$BCLM_VAL" ]; then
+                        : # bc-status down — leave hold; watchdog LAYER8 resolves
+                    elif [ "$BCLM_VAL" = "10" ]; then
+                        : # BCLM=10 — legitimate hold, keep
                     else
-                        log "hygiene: stale active_mode=hold (SMC=$SMC_UP cfg=$WANT_UP) → idle"
-                        echo "idle" > "$DASH/.active_mode"
+                        log "hygiene: stale active_mode=hold (BCLM=$BCLM_VAL, not 10) → idle"
+                        printf 'idle\n' > "$DASH/.active_mode.tmp.$$" && mv "$DASH/.active_mode.tmp.$$" "$DASH/.active_mode"
                         CLEANED=$((CLEANED + 1))
                     fi
                 fi
                 ;;
             charge_full|discharge|calibration)
-                PROC_PAT="battopt $AM"
-                [ "$AM" = "charge_full" ] && PROC_PAT="battopt charge"
-                if ! pgrep -f "$PROC_PAT" >/dev/null 2>&1; then
-                    log "hygiene: stale active_mode=$AM (no process) → idle"
-                    echo "idle" > "$DASH/.active_mode"
+                # BC v1: charge_full is legitimate iff the config
+                # is 100/99 (the state lives in the config, not in
+                # a process); discharge/calibration have no BC
+                # process, so any such mode file is stale.
+                WANT_UP=86
+                WANT_LO=85
+                if [ -f "$DASH/config" ]; then
+                    while IFS='=' read -r _k _v; do
+                        case "$_k" in
+                            LAST_UPPER) WANT_UP="$_v" ;;
+                            LAST_LOWER) WANT_LO="$_v" ;;
+                        esac
+                    done < "$DASH/config"
+                fi
+                if [ "$AM" = "charge_full" ] && [ "$WANT_UP" = "100" ] && [ "$WANT_LO" = "99" ]; then
+                    log "hygiene: charge_full legitimate (config 100/99)"
+                else
+                    log "hygiene: stale active_mode=$AM (BC v1 has no $AM process) → idle"
+                    printf 'idle\n' > "$DASH/.active_mode.tmp.$$" && mv "$DASH/.active_mode.tmp.$$" "$DASH/.active_mode"
                     # H3: no process, no session owner — token is orphaned.
                     if [ ! -f "$DASH/.sd_session" ] && [ -s "$DASH/.active_token" ]; then
                         log "hygiene: orphan .active_token (mode=$AM, no process) → cleaned"
@@ -204,14 +234,12 @@ if [ -f "$DASH/.active_mode" ]; then
                 ;;
             *)
                 # Idle or unknown — defensively clear a leftover token.
+                # BC v1 has no discharge/charge/calibrate process,
+                # so a token with no owning mode is always orphaned.
                 if [ -s "$DASH/.active_token" ]; then
-                    if ! pgrep -f "battopt discharge" >/dev/null 2>&1 \
-                       && ! pgrep -f "battopt charge"    >/dev/null 2>&1 \
-                       && ! pgrep -f "battopt calibrate" >/dev/null 2>&1; then
-                        log "hygiene: orphan .active_token (mode=${AM:-idle}) → cleaned"
-                        rm -f "$DASH/.active_token"
-                        CLEANED=$((CLEANED + 1))
-                    fi
+                    log "hygiene: orphan .active_token (mode=${AM:-idle}) → cleaned"
+                    rm -f "$DASH/.active_token"
+                    CLEANED=$((CLEANED + 1))
                 fi
                 ;;
         esac

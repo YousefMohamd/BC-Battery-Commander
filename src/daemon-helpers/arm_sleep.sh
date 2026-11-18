@@ -1,88 +1,132 @@
 #!/bin/bash
-if [ -z "$HOME" ]; then echo "ERROR: HOME is unset, refusing to guess user" >&2; exit 1; fi
-[ -f "$HOME/.battopt-swiftbar/.user_shutdown" ] && exit 0
+# Arm Sleep — one-button preparation for sleep (Battery Commander)
+# Gracefully quiets audio apps, runs cleanup, arms PowerWatch.
+# W4.1: graceful quit (kill only as a fallback); Firefox mute dropped
+# (focus-stealing); .arm_log capped; pre_sleep_cleanup existence-checked;
+# Prepare warning reworded to the charging-through-sleep case.
+# No battopt, no sudo, no SMC write. No pmset changes by this script
+# (it calls power_saver.sh, whose pmset changes are covered by W4.3).
 
-# Local notify — fallback if running standalone
+if [ -z "$HOME" ]; then echo "ERROR: HOME is unset, refusing to guess user" >&2; exit 1; fi
+# BC state dir: ~/.battery-commander/ is the ONLY live state dir
+# (consolidation 2026-11-13, M2: the old-dir fallback is retired — the
+# pre-migration dir is a kept, inert backup and must never be read or
+# written as a live target). BC_DASH overrides (tests / dry-runs).
+if [ -n "${BC_DASH:-}" ]; then
+    DASH="$BC_DASH"
+elif [ -d "$HOME/.battery-commander" ]; then
+    DASH="$HOME/.battery-commander"
+else
+    echo "ERROR: Battery Commander state dir missing - ~/.battery-commander not found; refusing to run (old-dir fallback retired)" >&2
+    exit 1
+fi
+
+[ -f "$DASH/.user_shutdown" ] && exit 0
+
+BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
+BC_CANDIDATES="$BC_BUILD_DIR/bc-candidates"
+
+# Local notify — fallback if running standalone.
+# App-native transport (final cleanup 2026-11-18): queue one
+# title<TAB>body line; BatteryCommander.app posts it natively.
 if ! command -v notify >/dev/null 2>&1; then
     notify() {
-        local NOTIFIER="/Applications/terminal-notifier.app/Contents/MacOS/terminal-notifier"
-        local ICON="$HOME/.battopt-swiftbar/icons/battopt.png"
-        if [ -x "$NOTIFIER" ]; then
-            [ -f "$ICON" ] && nohup "$NOTIFIER" -title "$1" -message "$2" -group battopt -timeout 3 >/dev/null 2>&1 &
-            disown
-        fi
+        local _t _b
+        _t=$(printf '%s' "$1" | tr '\n\t' '  ')
+        _b=$(printf '%s' "$2" | tr '\n\t' '  ')
+        printf '%s\t%s\n' "$_t" "$_b" >> "$DASH/.notify_queue" 2>/dev/null || true
     }
 fi
-# Arm Sleep — one-button preparation for sleep
-# Kills audio apps, runs cleanup, arms PowerWatch
 
-LOG="$HOME/.battopt-swiftbar/actions.log"
+LOG="$DASH/actions.log"
 log() { echo "[$(date '+%H:%M:%S')] arm_sleep: $1" >> "$LOG"; }
 
+# bc_read_bclm — print the BCLM value (10 = hold, 100 = charging allowed),
+# or nothing if it cannot be read. Read-only; never writes.
+# (Same helper as dispatch.sh W1; bc-candidates prints
+# "BCLM: size=1 type=ui8 bytes=0a value=10".)
+bc_read_bclm() {
+    local _bin="$BC_CANDIDATES" _out _v
+    [ -x "$_bin" ] || return 1
+    _out=$("$_bin" 2>/dev/null) || return 1
+    _v=$(printf '%s\n' "$_out" | grep '^BCLM:' | grep -oE 'value=[0-9]+' | grep -oE '[0-9]+' | head -1)
+    [ -n "$_v" ] && printf '%s' "$_v" && return 0
+    return 1
+}
+
 log "=== ARM SLEEP START ==="
-# Prepare warning: sleep on charger below upper risks overshoot (enforcement pauses during sleep)
-if [ -f "$HOME/.battopt-swiftbar/config" ]; then
-    source "$HOME/.battopt-swiftbar/config" 2>/dev/null
+# Prepare warning: charging through sleep past UPPER (enforcement pauses
+# during sleep). If BCLM=10 is already holding, the risk is lower (the hold
+# persists in the SMC); if BCLM=100 (or unreadable), the battery charges
+# through sleep past UPPER — warn, don't block.
+if [ -f "$DASH/config" ]; then
+    WARN_UPPER=$(grep -E '^LAST_UPPER=' "$DASH/config" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
 fi
-WARN_UPPER="${LAST_UPPER:-85}"
+WARN_UPPER="${WARN_UPPER:-86}"
+case "$WARN_UPPER" in ''|*[!0-9]*) WARN_UPPER=86 ;; esac
 WARN_PCT=$(pmset -g batt 2>/dev/null | grep -oE '[0-9]+%' | head -1 | tr -d '%')
 if [ -n "$WARN_PCT" ] && [ "$WARN_PCT" -lt "$WARN_UPPER" ] 2>/dev/null && pmset -g batt 2>/dev/null | grep -q "AC Power"; then
-    log "WARNING: sleep on charger risk — Battery ${WARN_PCT}% < limit ${WARN_UPPER}%, charger attached, enforcement pauses during sleep, overshoot possible — unplug or wait for stable hold before sleeping"
-    notify "BattOpt" "⚠ Sleep on charger risk: ${WARN_PCT}% < ${WARN_UPPER}%, charger attached — unplug or wait for hold before sleeping"
+    _bclm=$(bc_read_bclm 2>/dev/null) || _bclm=""
+    if [ "$_bclm" = "10" ]; then
+        log "Sleep on charger: battery ${WARN_PCT}% < limit ${WARN_UPPER}%, but BCLM=10 (holding) — lower risk, the hold persists through sleep"
+    else
+        log "WARNING: charging through sleep — Battery ${WARN_PCT}% < limit ${WARN_UPPER}%, charger attached, BCLM=${_bclm:-?} (charging), enforcement pauses during sleep, battery will charge past the limit — unplug or wait for stable hold before sleeping"
+        notify "Battery Commander" "⚠ Charging through sleep: ${WARN_PCT}% < ${WARN_UPPER}%, charger attached — unplug or wait for hold before sleeping"
+    fi
 fi
 
-# Keep the selected sleep policy when preparing to sleep.
-SLEEP_PROFILE=$(cat "$HOME/.battopt-swiftbar/.sleep_profile" 2>/dev/null)
-SLEEP_MODE=$(cat "$HOME/.battopt-swiftbar/.sleep_mode" 2>/dev/null)
+# Sleep delay profile. long/travel redefined 2026-11-11 (Yousef approved
+# distinct values). The profile follows the active sleep mode: travel ->
+# travel delays, long -> long delays; everything else -> default
+# (presentation/download set their own pmset values in dispatch.sh).
+SLEEP_PROFILE=$(cat "$DASH/.sleep_profile" 2>/dev/null)
+SLEEP_MODE=$(cat "$DASH/.sleep_mode" 2>/dev/null)
 case "$SLEEP_MODE" in
-    travel)
-        APPLY_PROFILE=travel
-        ;;
-    download)
-        APPLY_PROFILE=long
-        ;;
-    *)
-        case "$SLEEP_PROFILE" in
-            active_ac|active_battery)
-                APPLY_PROFILE=default
-                ;;
-            long_ac|long_battery)
-                APPLY_PROFILE=long
-                ;;
-            *)
-                APPLY_PROFILE=default
-                ;;
-        esac
-        ;;
+    travel|long) APPLY_PROFILE="$SLEEP_MODE" ;;
+    *) APPLY_PROFILE=default ;;
 esac
-if [ -f "$HOME/.battopt-swiftbar/.power_saver" ]; then
-    "$HOME/.battopt-swiftbar/power_saver.sh" on
-    "$HOME/.battopt-swiftbar/power_saver.sh" apply-delays "$APPLY_PROFILE"
+log "Sleep profile: ${SLEEP_PROFILE:-?} mode: ${SLEEP_MODE:-?} -> delays: $APPLY_PROFILE"
+if [ -f "$DASH/.power_saver" ]; then
+    "$DASH/power_saver.sh" on
+    "$DASH/power_saver.sh" apply-delays "$APPLY_PROFILE"
     log "Applied sleep delay profile: $APPLY_PROFILE"
 else
-    "$HOME/.battopt-swiftbar/power_saver.sh" off
-    log "Power Saver disabled; applied conservative sleep settings"
+    "$DASH/power_saver.sh" off
+    log "Power Saver disabled; restored standard sleep settings"
 fi
 
-# 1. Kill audio apps completely (not just STOP)
+# 1. Quiet audio apps — graceful quit first, kill only if still running.
+# Never kill unconditionally: quit is a polite request (the app can finish
+# cleanly); the kill fallback fires only after a short timeout if the app
+# is still running.
 for app in VLC Spotify Music; do
     if pgrep -x "$app" >/dev/null 2>&1; then
-        /usr/bin/pkill -x "$app" 2>/dev/null
-        log "Killed $app"
-        sleep 0.5
+        osascript -e "tell application \"$app\" to quit" 2>/dev/null
+        _t=0
+        while [ "$_t" -lt 6 ] && pgrep -x "$app" >/dev/null 2>&1; do
+            sleep 0.5
+            _t=$((_t + 1))
+        done
+        if pgrep -x "$app" >/dev/null 2>&1; then
+            /usr/bin/pkill -x "$app" 2>/dev/null
+            log "Killed $app (did not quit gracefully)"
+        else
+            log "Quit $app gracefully"
+        fi
     fi
 done
 
-# 2. Mute Firefox tabs
-if pgrep -x firefox >/dev/null 2>&1; then
-    osascript -e 'tell application "Firefox" to activate' 2>/dev/null
-    sleep 0.3
-    osascript -e 'tell application "System Events" to keystroke "m" using {command down, shift down}' 2>/dev/null
-    log "Firefox muted"
-fi
+# 2. Firefox mute DROPPED (W4.1). The old method activated Firefox and
+# sent a blind Cmd-Shift-M keystroke — focus-stealing and fragile. No
+# non-focus-stealing mute exists for Firefox tabs; Firefox audio (if any)
+# is caught by the verify step below, which reports remaining contexts.
 
-# 3. Run pre_sleep_cleanup
-~/.battopt-swiftbar/pre_sleep_cleanup.sh 2>/dev/null
+# 3. Run pre_sleep_cleanup (if present — log and continue if absent).
+if [ -x "$DASH/pre_sleep_cleanup.sh" ]; then
+    "$DASH/pre_sleep_cleanup.sh" 2>/dev/null
+else
+    log "pre_sleep_cleanup.sh not found — skipping"
+fi
 
 # 4. Verify audio contexts are gone
 sleep 2
@@ -90,18 +134,26 @@ AUDIO=$(pmset -g assertions 2>/dev/null | grep -ci "coreaudiod.*PreventUserIdle"
 
 if [ "$AUDIO" -eq 0 ]; then
     log "Arm complete — no audio contexts"
-    notify "BattOpt" "✅ Ready for sleep — close the lid"
+    notify "Battery Commander" "✅ Ready for sleep — close the lid"
 else
     log "Arm incomplete — $AUDIO audio contexts remain"
-    notify "BattOpt" "⚠ $AUDIO audio contexts still active"
+    notify "Battery Commander" "⚠ $AUDIO audio contexts still active"
 fi
 
-# 5. Record baseline
-echo "" >> "$HOME/.battopt-swiftbar/.arm_log"
-echo "=== ARMED $(date '+%Y-%m-%d %H:%M') ===" >> "$HOME/.battopt-swiftbar/.arm_log"
-echo "Battery: $(pmset -g batt | grep -oE '[0-9]+%' | head -1)" >> "$HOME/.battopt-swiftbar/.arm_log"
-echo "Wakes: $(pmset -g log | grep -cE 'Wake from|DarkWake')" >> "$HOME/.battopt-swiftbar/.arm_log"
-echo "Audio: $AUDIO" >> "$HOME/.battopt-swiftbar/.arm_log"
+# 5. Record baseline (cap .arm_log at 100 KB, keep the last 200 lines).
+{
+    echo ""
+    echo "=== ARMED $(date '+%Y-%m-%d %H:%M') ==="
+    echo "Battery: $(pmset -g batt | grep -oE '[0-9]+%' | head -1)"
+    echo "Wakes: $(pmset -g log | grep -cE 'Wake from|DarkWake')"
+    echo "Audio: $AUDIO"
+} >> "$DASH/.arm_log"
+_arm_log_size=$(wc -c < "$DASH/.arm_log" 2>/dev/null | tr -d ' ')
+if [ -n "$_arm_log_size" ] && [ "$_arm_log_size" -gt 102400 ] 2>/dev/null; then
+    tail -n 200 "$DASH/.arm_log" > "$DASH/.arm_log.tmp.$$" && mv "$DASH/.arm_log.tmp.$$" "$DASH/.arm_log"
+fi
 
-touch "$HOME/.battopt-swiftbar/.armed_for_sleep"
+touch "$DASH/.armed_for_sleep"
+# Flag cleanup is owned by post_wake_restore.sh (single owner, W4.1) —
+# arm_sleep only sets .armed_for_sleep; it never removes flags.
 log "=== ARM SLEEP END ==="

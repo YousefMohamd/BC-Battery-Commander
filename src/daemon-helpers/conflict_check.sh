@@ -1,11 +1,11 @@
 #!/bin/bash
-# Conflict Detection — find tools that clash with BattOpt
+# Conflict Detection — find tools that clash with Battery Commander
 
-REPORT="/tmp/battopt_conflicts_$(date +%Y%m%d_%H%M).txt"
+REPORT="/tmp/battery-commander_conflicts_$(date +%Y%m%d_%H%M).txt"
 
 {
 echo "═══════════════════════════════════════════════════"
-echo "  BattOpt — Conflict Detection"
+echo "  Battery Commander — Conflict Detection"
 echo "  $(date '+%Y-%m-%d %H:%M:%S')"
 echo "═══════════════════════════════════════════════════"
 echo ""
@@ -13,7 +13,7 @@ echo ""
 echo "─── OTHER BATTERY TOOLS ───"
 found=0
 for tool in "AlDente" "Battery" "Coconut" "BatteryHealth" "battery"; do
-    pids=$(pgrep -fl "$tool" 2>/dev/null | grep -v battopt)
+    pids=$(pgrep -fl "$tool" 2>/dev/null | grep -v -e battopt -e battery-commander)
     if [ -n "$pids" ]; then
         echo "⚠️ $tool: $pids"
         found=1
@@ -40,8 +40,8 @@ for tool in "CleanMyMac" "macpaw" "Cold Turkey" "NMHFirefox"; do
 done
 echo ""
 
-echo "─── LAUNCHAGENTS (non-Apple, non-BattOpt) ───"
-launchctl list | grep -v "com.apple" | grep -v "battopt" | grep -v "^-" | head -20
+echo "─── LAUNCHAGENTS (non-Apple, non-Battery Commander) ───"
+launchctl list | grep -v "com.apple" | grep -v "battopt" | grep -v "batterycommander" | grep -v "^-" | head -20
 echo ""
 
 echo "─── KERNEL EXTENSIONS ───"
@@ -52,11 +52,11 @@ echo "─── SUDOERS ENTRIES ───"
 ls -la /etc/sudoers.d/ 2>/dev/null
 echo ""
 
-echo "─── CONFLICTS WITH BATTOPT ───"
+echo "─── SMC ACCESS (BCLM) ───"
 # Check if other tools use BCLM
 for pid in $(pgrep -f smc 2>/dev/null); do
     cmd=$(ps -p $pid -o command= 2>/dev/null)
-    echo "Process using SMC: $cmd"
+    echo "Process with 'smc' in its command line (name match only — not proof of SMC access): $cmd"
 done
 echo ""
 

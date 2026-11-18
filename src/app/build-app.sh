@@ -1,13 +1,28 @@
 #!/bin/bash
-# build-app.sh
+# build-app.sh — Battery Commander app bundle builder (W5.1)
+#
+# Builds BatteryCommander.app from BatteryCommander.applescript via
+# osacompile, copies BatteryCommander-launcher.sh into Resources, copies
+# the icon if present, and configures the bundle metadata.
+#
+# Usage: $0 [--install] [--test]
+#   (no flags)  build to /tmp/BatteryCommander.app only, verify, exit.
+#   --install   also install to /Applications/BatteryCommander.app (uses
+#               sudo mv; this is a USER deploy step, never run by the agent).
+#   --test      retain the temporary app (do not clean it up).
+#
+# BC rules: no battopt binary, no trial-renew helpers, no hardcoded user.
+# Bundle identity: com.batterycommander.launcher, "Battery Commander",
+# icon "Battery Commander". The old BattOpt.app bundle is NOT touched by
+# this script; it is on the dead-file removal list (W6/deploy).
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APPLE_SCRIPT="$SCRIPT_DIR/BattOpt.applescript"
-LAUNCHER_SCRIPT="$SCRIPT_DIR/BattOpt-launcher.sh"
-TMP_APP="/tmp/BattOpt.app"
-INSTALL_APP="/Applications/BattOpt.app"
+APPLE_SCRIPT="$SCRIPT_DIR/BatteryCommander.applescript"
+LAUNCHER_SCRIPT="$SCRIPT_DIR/BatteryCommander-launcher.sh"
+TMP_APP="/tmp/BatteryCommander.app"
+INSTALL_APP="/Applications/BatteryCommander.app"
 APP_PATH="$TMP_APP"
 INSTALL=0
 TEST=0
@@ -55,24 +70,25 @@ configure_bundle() {
     }
 
     set_plist_value "$plist" "LSUIElement" "bool" "true" || return 1
-    set_plist_value "$plist" "CFBundleIdentifier" "string" "com.yousef.battopt.launcher" || return 1
-    set_plist_value "$plist" "CFBundleName" "string" "BattOpt" || return 1
+    set_plist_value "$plist" "CFBundleIdentifier" "string" "com.batterycommander.launcher" || return 1
+    set_plist_value "$plist" "CFBundleName" "string" "Battery Commander" || return 1
 
     if [ "$ICON_OK" -eq 1 ]; then
-        set_plist_value "$plist" "CFBundleIconFile" "string" "battopt" || return 1
+        set_plist_value "$plist" "CFBundleIconFile" "string" "Battery Commander" || return 1
     fi
 
     return 0
 }
 
 find_icon() {
-    if [ -f "$HOME/.battopt-swiftbar/icons/battopt.icns" ]; then
-        ICON_SOURCE="$HOME/.battopt-swiftbar/icons/battopt.icns"
+    # "Battery Commander.icns" - generate it from the repo-root
+    # "Battery Commander.png" with iconutil at deploy time if it is absent.
+    if [ -f "$HOME/.battery-commander/icons/Battery Commander.icns" ]; then
+        ICON_SOURCE="$HOME/.battery-commander/icons/Battery Commander.icns"
         return 0
     fi
-
-    if [ -f "$SCRIPT_DIR/../../assets/icons/battopt.icns" ]; then
-        ICON_SOURCE="$SCRIPT_DIR/../../assets/icons/battopt.icns"
+    if [ -f "$SCRIPT_DIR/../../assets/icons/Battery Commander.icns" ]; then
+        ICON_SOURCE="$SCRIPT_DIR/../../assets/icons/Battery Commander.icns"
         return 0
     fi
 
@@ -103,10 +119,10 @@ verify_mach_o() {
 
 verify_launcher() {
     local app_path="$1"
-    local launcher="$app_path/Contents/Resources/BattOpt-launcher.sh"
+    local launcher="$app_path/Contents/Resources/BatteryCommander-launcher.sh"
 
     if [ -f "$launcher" ] && [ -x "$launcher" ]; then
-        echo "PASS: BattOpt-launcher.sh is present and executable"
+        echo "PASS: BatteryCommander-launcher.sh is present and executable"
         return 0
     fi
 
@@ -127,7 +143,7 @@ verify_app() {
     local launcher_ok=0
 
     echo
-    echo "=== BattOpt.app Verification ==="
+    echo "=== BatteryCommander.app Verification ==="
     echo "App path: $path"
 
     if verify_mach_o "$path"; then
@@ -151,11 +167,11 @@ verify_app() {
             /usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" \
                 "$plist" 2>/dev/null || true
         )
-        if [ "$bundle_identifier" = "com.yousef.battopt.launcher" ]; then
+        if [ "$bundle_identifier" = "com.batterycommander.launcher" ]; then
             identifier_ok=1
-            echo "PASS: CFBundleIdentifier is com.yousef.battopt.launcher"
+            echo "PASS: CFBundleIdentifier is com.batterycommander.launcher"
         else
-            echo "FAIL: CFBundleIdentifier is ${bundle_identifier:-missing}, expected com.yousef.battopt.launcher"
+            echo "FAIL: CFBundleIdentifier is ${bundle_identifier:-missing}, expected com.batterycommander.launcher"
         fi
 
         lsui_element=$(
@@ -172,10 +188,10 @@ verify_app() {
         echo "FAIL: missing Info.plist: $plist"
     fi
 
-    if [ -f "$path/Contents/Resources/battopt.icns" ]; then
-        echo "PASS: battopt.icns is present"
+    if [ -f "$path/Contents/Resources/Battery Commander.icns" ]; then
+        echo "PASS: Battery Commander.icns is present"
     else
-        echo "SKIP: icon is not present (optional)"
+        echo "SKIP: icon is not present (optional - generate from Battery Commander.png at deploy)"
     fi
 
     if verify_launcher "$path"; then
@@ -224,18 +240,18 @@ fi
 rm -rf "$TMP_APP"
 
 if osacompile -s -o "$TMP_APP" "$APPLE_SCRIPT"; then
-    if cp "$LAUNCHER_SCRIPT" "$TMP_APP/Contents/Resources/BattOpt-launcher.sh" &&
-        chmod 755 "$TMP_APP/Contents/Resources/BattOpt-launcher.sh"; then
+    if cp "$LAUNCHER_SCRIPT" "$TMP_APP/Contents/Resources/BatteryCommander-launcher.sh" &&
+        chmod 755 "$TMP_APP/Contents/Resources/BatteryCommander-launcher.sh"; then
 
         if find_icon; then
-            if cp "$ICON_SOURCE" "$TMP_APP/Contents/Resources/battopt.icns"; then
+            if cp "$ICON_SOURCE" "$TMP_APP/Contents/Resources/Battery Commander.icns"; then
                 ICON_OK=1
                 echo "Icon copied: $ICON_SOURCE"
             else
                 echo "WARN: could not copy icon from $ICON_SOURCE; continuing without it"
             fi
         else
-            echo "WARN: icon not found; continuing without it"
+            echo "WARN: icon not found; continuing without it (generate Battery Commander.icns from Battery Commander.png at deploy)"
         fi
 
         if configure_bundle "$TMP_APP"; then
@@ -259,11 +275,11 @@ if [ "$BUILD_OK" -eq 1 ]; then
 fi
 
 if [ "$INSTALL" -eq 1 ] && [ "$BUILD_OK" -eq 1 ]; then
-    BACKUP_PATH="/Applications/BattOpt.app.backup-$(date +%Y%m%d-%H%M%S)"
+    BACKUP_PATH="/Applications/BatteryCommander.app.backup-$(date +%Y%m%d-%H%M%S)"
     BACKUP_SUFFIX=1
 
     while [ -e "$BACKUP_PATH" ]; do
-        BACKUP_PATH="/Applications/BattOpt.app.backup-$(date +%Y%m%d-%H%M%S)-${BACKUP_SUFFIX}"
+        BACKUP_PATH="/Applications/BatteryCommander.app.backup-$(date +%Y%m%d-%H%M%S)-${BACKUP_SUFFIX}"
         BACKUP_SUFFIX=$((BACKUP_SUFFIX + 1))
     done
 

@@ -6,7 +6,7 @@ POWER_SAVER="$ROOT/src/daemon-helpers/power_saver.sh"
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-mkdir -p "$TMP/bin" "$TMP/home/.battopt-swiftbar"
+mkdir -p "$TMP/bin" "$TMP/home/.battery-commander"
 
 cat > "$TMP/bin/sudo" <<'SUDO'
 #!/bin/bash
@@ -36,41 +36,63 @@ assert_profile() {
 }
 
 assert_profile default "$(cat <<'EXPECTED'
--b standbydelayhigh 2700
--b standbydelaylow 2700
+-b standbydelayhigh 600
+-b standbydelaylow 600
 -b autopoweroffdelay 1800
--b standbydelay 2700
--c standbydelayhigh 3600
--c standbydelaylow 3600
+-b standbydelay 600
+-b disksleep 10
+-c standbydelayhigh 10800
+-c standbydelaylow 10800
 -c autopoweroffdelay 3600
--c standbydelay 3600
+-c standbydelay 10800
 -c sleep 90
+-c disksleep 10
 EXPECTED
 )"
 
 assert_profile long "$(cat <<'EXPECTED'
 -b standbydelayhigh 3600
 -b standbydelaylow 3600
--b autopoweroffdelay 1800
+-b autopoweroffdelay 3600
 -b standbydelay 3600
--c standbydelayhigh 7200
--c standbydelaylow 7200
--c autopoweroffdelay 3600
--c standbydelay 7200
+-b disksleep 10
+-c standbydelayhigh 14400
+-c standbydelaylow 14400
+-c autopoweroffdelay 7200
+-c standbydelay 14400
 -c sleep 90
+-c disksleep 10
 EXPECTED
 )"
 
 assert_profile travel "$(cat <<'EXPECTED'
 -b standbydelayhigh 3600
 -b standbydelaylow 3600
--b autopoweroffdelay 1800
+-b autopoweroffdelay 14400
 -b standbydelay 3600
+-b disksleep 10
 -c standbydelayhigh 10800
 -c standbydelaylow 10800
 -c autopoweroffdelay 3600
 -c standbydelay 10800
 -c sleep 90
+-c disksleep 10
+EXPECTED
+)"
+
+# Unknown profile falls back to default.
+assert_profile bogus "$(cat <<'EXPECTED'
+-b standbydelayhigh 600
+-b standbydelaylow 600
+-b autopoweroffdelay 1800
+-b standbydelay 600
+-b disksleep 10
+-c standbydelayhigh 10800
+-c standbydelaylow 10800
+-c autopoweroffdelay 3600
+-c standbydelay 10800
+-c sleep 90
+-c disksleep 10
 EXPECTED
 )"
 
@@ -80,22 +102,26 @@ EXPECTED
 diff -u <(cat <<'EXPECTED'
 -b standbydelayhigh 3600
 -b standbydelaylow 3600
--b autopoweroffdelay 1800
+-b autopoweroffdelay 14400
 -b standbydelay 3600
+-b disksleep 10
 -c standbydelayhigh 10800
 -c standbydelaylow 10800
 -c autopoweroffdelay 3600
 -c standbydelay 10800
 -c sleep 90
--b standbydelayhigh 2700
--b standbydelaylow 2700
+-c disksleep 10
+-b standbydelayhigh 600
+-b standbydelaylow 600
 -b autopoweroffdelay 1800
--b standbydelay 2700
--c standbydelayhigh 3600
--c standbydelaylow 3600
+-b standbydelay 600
+-b disksleep 10
+-c standbydelayhigh 10800
+-c standbydelaylow 10800
 -c autopoweroffdelay 3600
--c standbydelay 3600
+-c standbydelay 10800
 -c sleep 90
+-c disksleep 10
 EXPECTED
 ) "$PMSET_LOG"
 

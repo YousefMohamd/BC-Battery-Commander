@@ -1,8 +1,21 @@
 #!/bin/bash
-# BattOpt Project Health Check
+# Battery Commander Project Health Check
 # Verifies all components are functioning
 
-REPORT="/tmp/battopt_health_latest.txt"
+# BC state dir: ~/.battery-commander/ is the ONLY live state dir
+# (consolidation 2026-11-13, M2: the old-dir fallback is retired — the
+# pre-migration dir is a kept, inert backup and must never be read or
+# written as a live target). BC_DASH overrides (tests / dry-runs).
+if [ -n "${BC_DASH:-}" ]; then
+    DASH="$BC_DASH"
+elif [ -d "$HOME/.battery-commander" ]; then
+    DASH="$HOME/.battery-commander"
+else
+    echo "ERROR: Battery Commander state dir missing - ~/.battery-commander not found; refusing to run (old-dir fallback retired)" >&2
+    exit 1
+fi
+BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
+REPORT="/tmp/battery-commander_health_latest.txt"
 PASS=0
 FAIL=0
 WARN=0
@@ -24,9 +37,17 @@ warn() {
     WARN=$((WARN+1))
 }
 
+# fail() was called but never defined (pre-existing W6.4 bug) —
+# without it the script died on the first FAIL.
+fail() {
+    echo "❌ FAIL: $1" >> "$REPORT"
+    echo "❌ FAIL: $1"
+    FAIL=$((FAIL+1))
+}
+
 {
 echo "═══════════════════════════════════════════════════"
-echo "  BattOpt Health Check — $(date '+%Y-%m-%d %H:%M:%S')"
+echo "  Battery Commander Health Check — $(date '+%Y-%m-%d %H:%M:%S')"
 echo "═══════════════════════════════════════════════════"
 echo ""
 } | tee "$REPORT"
@@ -37,20 +58,31 @@ echo "─── CORE FILES ───" | tee -a "$REPORT"
 check "SwiftBar.app exists" \
     "$([ -d /Applications/SwiftBar.app ] && echo yes || echo no)" "yes"
 
-check "terminal-notifier.app exists" \
-    "$([ -d /Applications/terminal-notifier.app ] && echo yes || echo no)" "yes"
+# Notifications are app-native (final cleanup 2026-11-18, owner
+# order): scripts queue to $DASH/.notify_queue and the app posts
+# via UNUserNotificationCenter. Healthy = both main producers use
+# the queue and neither references the retired external notifier.
+NOTIFY_OK=yes
+grep -q '.notify_queue' "$DASH/dispatch.sh" 2>/dev/null || NOTIFY_OK=no
+grep -q '.notify_queue' "$DASH/bc-watchdog.sh" 2>/dev/null || NOTIFY_OK=no
+grep -q 'terminal-notifier' "$DASH/dispatch.sh" 2>/dev/null && NOTIFY_OK=no
+grep -q 'terminal-notifier' "$DASH/bc-watchdog.sh" 2>/dev/null && NOTIFY_OK=no
+check "App-native notifications (queue transport, no external notifier)" "$NOTIFY_OK" "yes"
 
-check "BattOpt.app exists" \
-    "$([ -d /Applications/BattOpt.app ] && echo yes || echo no)" "yes"
+# BC app bundle is "BatteryCommander.app" (no space) — the old
+# "Battery Commander.app" (with space) never existed; the old
+# BattOpt.app fallback is gone (deleted 2026-11-10).
+check "Battery Commander.app exists" \
+    "$([ -d "/Applications/BatteryCommander.app" ] && echo yes || echo no)" "yes"
 
-check "Plugin exists" \
-    "$([ -f ~/SwiftBar/battopt.10s.sh ] && echo yes || echo no)" "yes"
+check "App executable exists" \
+    "$([ -f "/Applications/BatteryCommander.app/Contents/MacOS/BatteryCommander" ] && echo yes || echo no)" "yes"
 
 check "Dispatcher exists" \
-    "$([ -f ~/.battopt-swiftbar/dispatch.sh ] && echo yes || echo no)" "yes"
+    "$([ -f $DASH/dispatch.sh ] && echo yes || echo no)" "yes"
 
 check "PowerWatch exists" \
-    "$([ -f ~/.battopt-swiftbar/powerwatch ] && echo yes || echo no)" "yes"
+    "$([ -f $DASH/powerwatch ] && echo yes || echo no)" "yes"
 
 echo "" | tee -a "$REPORT"
 
@@ -78,34 +110,39 @@ for attempt in 1 2 3 4 5; do
 done
 [ -z "$SB_COUNT" ] && SB_COUNT=0
 
-check "SwiftBar running" \
-    "$([ "$SB_COUNT" -gt 0 ] && echo yes || echo no)" "yes"
+# SwiftBar retired (Stage C; owner order 2026-11-17): the native app
+# is the only UI and SwiftBar stays closed. Health guards the
+# retirement instead of the old running/single-instance checks.
+check "SwiftBar retired (not running)" \
+    "$([ "$SB_COUNT" -eq 0 ] && echo yes || echo no)" "yes"
 
-check "SwiftBar single instance" \
-    "$SB_COUNT" "1"
-
-check "battopt daemon running" \
-    "$(pgrep -f 'battopt daemon' >/dev/null && echo yes || echo no)" "yes"
+# Enforcer daemon: direct query — `launchctl print system/<label>` works
+# from a user shell (verified 2026-11-11); `launchctl list` cannot see a
+# system daemon. Not a hard FAIL before Phase C — the daemon is
+# deliberately not loaded yet.
+if launchctl print system/com.batterycommander.bclimit >/dev/null 2>&1; then
+    echo "   enforcer daemon: loaded" | tee -a "$REPORT"
+else
+    warn "enforcer daemon not loaded yet (Phase C gate — expected before deploy)"
+fi
 
 check "PowerWatch running" \
-    "$(pgrep -f 'battopt-swiftbar/powerwatch' >/dev/null && echo yes || echo no)" "yes"
+    "$(pgrep -f "$DASH/powerwatch" >/dev/null && echo yes || echo no)" "yes"
 
 echo "" | tee -a "$REPORT"
 
 # ─── LAUNCHAGENTS ───
 echo "─── LAUNCHAGENTS ───" | tee -a "$REPORT"
 
-LA=$(launchctl list | grep -c battopt)
+LA=$(launchctl list | grep -c batterycommander)
 check "LaunchAgents loaded (>0)" \
     "$([ "$LA" -gt 0 ] && echo yes || echo no)" "yes"
 
 # Check powerwatch daemon — multi-method
 PW_LOADED=no
-if launchctl print system/com.battopt.powerwatch 2>/dev/null | grep -q "state = running"; then
+if launchctl list com.batterycommander.powerwatch 2>/dev/null | grep -q "PID"; then
     PW_LOADED=yes
-elif sudo -n launchctl list 2>/dev/null | grep -q "com.battopt.powerwatch"; then
-    PW_LOADED=yes
-elif pgrep -f "battopt-swiftbar/powerwatch" >/dev/null 2>&1; then
+elif pgrep -f "$DASH/powerwatch" >/dev/null 2>&1; then
     PW_LOADED=yes
 fi
 
@@ -116,9 +153,12 @@ else
     warn "powerwatch NOT loaded"
 fi
 
-# Check LaunchAgents
-for svc in consolidated pmsetcheck swiftbar-watchdog process-monitor predictive self-healing adaptive-governor guardian; do
-    if launchctl list | grep -q "battopt.$svc"; then
+# Check all BC agents (13 renamed 2026-11-11 + watchdog + powerwatch
+# + watchdogsentinel, added 2026-11-14 — the sentinel watches the
+# watchdog, and this list is how the health check watches the
+# sentinel; it was missing here, so a dead sentinel showed as green).
+for svc in watchdog powerwatch acwatcher hygiene log-cleanup morning-report pmsetcheck predictive process-monitor self-healing selfmaintenance sleepmanager sleepmonitor wakeanalyzer watchdogsentinel; do
+    if launchctl list | grep -q "batterycommander.$svc"; then
         echo "   $svc (agent): loaded" | tee -a "$REPORT"
     else
         warn "$svc NOT loaded"
@@ -130,19 +170,57 @@ echo "" | tee -a "$REPORT"
 # ─── PMSET SETTINGS ───
 echo "─── PMSET SETTINGS ───" | tee -a "$REPORT"
 
-# Hibernatemode — Battery MUST be 25, AC can be 0 or 25
+# ─── PROFILE-AWARE pmset expectations (final cleanup 2026-11-18) ───
+# Three independent tool layers write hibernatemode/standbydelay:
+#   * power_mode.sh profiles   (marker .current_power_mode)
+#   * power_saver.sh on/off + delay profiles (markers .power_saver,
+#     .sleep_mode = travel|long for the delay profiles)
+#   * sleep_mode actions (pmset posture per mode)
+# Each layer's designed values are legitimate, and the layers do
+# not re-assert each other — whichever wrote last is live. A live
+# value is therefore healthy iff it belongs to the UNION of the
+# designed values of every ACTIVE layer. The old static table
+# false-FAILed whenever the owner applied Balanced (live proof
+# 2026-11-18 20:27: hib 3/3 + standby 900 FAILed minutes after his
+# Balanced click, though both are Balanced's own designed values).
+_in_set() { case " $1 " in *" $2 "*) return 0 ;; *) return 1 ;; esac; }
+
+PM_MODE=$(cat "$DASH/.current_power_mode" 2>/dev/null | tr -d '[:space:]')
+# power_mode.sh designed values (standbydelay / hibernatemode):
+#   fast 300/25 · balanced 900/3 · awake 3600/3 · deep 0/25 ·
+#   custom (user standby)/3 · unmarked = balanced (the script's
+#   own status default).
+PM_STANDBY=""; PM_HIB=""
+case "$PM_MODE" in
+    fast)     PM_STANDBY=300;  PM_HIB=25 ;;
+    balanced) PM_STANDBY=900;  PM_HIB=3 ;;
+    awake)    PM_STANDBY=3600; PM_HIB=3 ;;
+    deep)     PM_STANDBY=0;    PM_HIB=25 ;;
+    custom)   PM_STANDBY="";   PM_HIB=3 ;;
+    *)        PM_MODE="balanced"; PM_STANDBY=900; PM_HIB=3 ;;
+esac
+
+# Hibernatemode — read both sources explicitly.
 HIB_BAT=$(pmset -g custom 2>/dev/null | awk '/^Battery Power:/{f=1} f && /hibernatemode/{print $2; exit}')
 HIB_AC=$(pmset -g custom 2>/dev/null | awk '/^AC Power:/{f=1} f && /hibernatemode/{print $2; exit}')
 [ -z "$HIB_BAT" ] && HIB_BAT=$(pmset -g | grep hibernatemode | awk '{print $2}')
 [ -z "$HIB_AC" ] && HIB_AC="$HIB_BAT"
 
-if [ "$HIB_BAT" = "25" ] && { [ "$HIB_AC" = "0" ] || [ "$HIB_AC" = "25" ]; }; then
-    check "hibernatemode (Bat=$HIB_BAT, AC=$HIB_AC)" "yes" "yes"
+# Expected set: the active power-mode profile's value, plus 25
+# while Power Saver is on (its `on` asserts 25) or 3 while it is
+# off (its `off` restores 3).
+HIB_EXPECT="$PM_HIB"
+if [ -f "$DASH/.power_saver" ]; then
+    _in_set "$HIB_EXPECT" 25 || HIB_EXPECT="$HIB_EXPECT 25"
 else
-    check "hibernatemode (Bat=$HIB_BAT, AC=$HIB_AC)" "no" "yes"
+    _in_set "$HIB_EXPECT" 3 || HIB_EXPECT="$HIB_EXPECT 3"
+fi
+if _in_set "$HIB_EXPECT" "$HIB_BAT" && _in_set "$HIB_EXPECT" "$HIB_AC"; then
+    check "hibernatemode (Bat=$HIB_BAT, AC=$HIB_AC, power_mode=$PM_MODE, expected one of: $HIB_EXPECT)" "yes" "yes"
+else
+    check "hibernatemode (Bat=$HIB_BAT, AC=$HIB_AC, power_mode=$PM_MODE, expected one of: $HIB_EXPECT)" "no" "yes"
 fi
 
-STANDBY=$(pmset -g | grep '^ standbydelayhigh' | awk '{print $2}')
 # standbydelay — read from Battery Power section explicitly
 STANDBY_BAT=$(pmset -g custom 2>/dev/null | awk '
     /^Battery Power:/ {f=1; next}
@@ -151,47 +229,52 @@ STANDBY_BAT=$(pmset -g custom 2>/dev/null | awk '
 ')
 [ -z "$STANDBY_BAT" ] && STANDBY_BAT=0
 
-# Expected: 900 in Normal/Presentation/Download, 14400 in Travel
-SM_STATE=$(cat "$HOME/.battopt-swiftbar/.sleep_mode" 2>/dev/null || echo "default")
-# Layer 13 aware: standbydelay changes with .sleep_profile
-LAYER13_PROFILE=""
-[ -f "$HOME/.battopt-swiftbar/.sleep_profile" ] && LAYER13_PROFILE=$(cat "$HOME/.battopt-swiftbar/.sleep_profile")
-
-if [ "$SM_STATE" = "travel" ]; then
-    # Travel mode: user override
-    check "standbydelay (Bat=$STANDBY_BAT, Travel)" "$STANDBY_BAT" "14400"
-elif [ "$LAYER13_PROFILE" = "long_battery" ]; then
-    # Layer 13 long battery profile
-    check "standbydelay (Bat=$STANDBY_BAT, long_battery)" "$STANDBY_BAT" "3600"
-elif [ "$LAYER13_PROFILE" = "active_battery" ]; then
-    # Layer 13 active battery profile
-    check "standbydelay (Bat=$STANDBY_BAT, active_battery)" "$STANDBY_BAT" "300"
+# Expected set: the sleep-profile value (default 600; travel/long
+# set battery standbydelaylow to 3600 — power_saver profiles,
+# Yousef approved 2026-11-11) UNION the active power-mode
+# profile's standby value (when the profile sets one).
+SM_STATE=$(cat "$DASH/.sleep_mode" 2>/dev/null | tr -d '[:space:]')
+case "$SM_STATE" in
+    travel|long) EXPECT_STANDBY=3600 ;;
+    *) EXPECT_STANDBY=600 ;;
+esac
+STANDBY_EXPECT="$EXPECT_STANDBY"
+if [ -n "$PM_STANDBY" ]; then
+    _in_set "$STANDBY_EXPECT" "$PM_STANDBY" || STANDBY_EXPECT="$STANDBY_EXPECT $PM_STANDBY"
+fi
+if _in_set "$STANDBY_EXPECT" "$STANDBY_BAT"; then
+    check "standbydelay (Bat=$STANDBY_BAT, sleep_mode=${SM_STATE:-default}, power_mode=$PM_MODE, expected one of: $STANDBY_EXPECT)" "yes" "yes"
 else
-    # Default mode (AC or unknown)
-    if [ "$STANDBY_BAT" = "900" ] || [ "$STANDBY_BAT" = "300" ] || [ "$STANDBY_BAT" = "3600" ]; then
-        check "standbydelay (Bat=$STANDBY_BAT, profile=$LAYER13_PROFILE)"
-    else
-        fail "standbydelay (Bat=$STANDBY_BAT, profile=$LAYER13_PROFILE) — expected 900/300/3600"
-    fi
+    check "standbydelay (Bat=$STANDBY_BAT, sleep_mode=${SM_STATE:-default}, power_mode=$PM_MODE, expected one of: $STANDBY_EXPECT)" "no" "yes"
 fi
 
 POWERNAP=$(pmset -g | grep powernap | awk '{print $2}')
 [ -z "$POWERNAP" ] && POWERNAP="0"
 check "powernap = 0 (or absent)" "$POWERNAP" "0"
 
-# womp — from custom (better) or default to 0 if absent
+# womp — from custom (better) or default to 0 if absent.
+# womp (Wake for network access) is Yousef's own preference toggle —
+# he enabled it on 2026-11-13. Either value is a legitimate user
+# choice, not a health invariant: the old "womp = 0" check false-
+# FAILed his deliberate setting and trained him to ignore FAIL
+# (hardening 2026-11-14, seed 3). PASS on 0 or 1; FAIL only when the
+# value is unreadable or out of range — FAIL must mean failure.
 WOMP=$(pmset -g custom 2>/dev/null | grep '^ *womp' | awk '{print $2}' | head -1)
 [ -z "$WOMP" ] && WOMP=$(pmset -g 2>/dev/null | grep '^ *womp' | awk '{print $2}' | head -1)
 [ -z "$WOMP" ] && WOMP="0"
-check "womp = 0" "$WOMP" "0"
+case "$WOMP" in
+    0|1) check "womp = $WOMP (user preference — either value is healthy)" "ok" "ok" ;;
+    *)   check "womp readable (got: $WOMP)" "bad" "ok" ;;
+esac
 
 echo "" | tee -a "$REPORT"
 
 # ─── SUDOERS ───
 echo "─── SUDOERS ───" | tee -a "$REPORT"
 
-check "battopt NOPASSWD" \
-    "$(sudo -n /usr/local/bin/battopt status >/dev/null 2>&1 && echo yes || echo no)" "yes"
+# (deleted in BC) The battopt NOPASSWD check is gone with the
+# closed-source binary; the pmset check below is the BC sudoers
+# check (pmset-only replacement, W5.3).
 
 check "pmset NOPASSWD" \
     "$(sudo -n /usr/bin/pmset -g >/dev/null 2>&1 && echo yes || echo no)" "yes"
@@ -215,19 +298,45 @@ else
     warn "Swap = ${SWAP} MB (high)"
 fi
 
-TEMP_RAW=$(sudo -n battopt status 2>/dev/null | grep -oE "[0-9.]+" | head -1)
-# Better: extract the temperature from "36.8°C" pattern
-TEMP=$(sudo -n battopt status 2>/dev/null | grep -oE "[0-9]+\.[0-9]+°C" | head -1 | sed 's/°C//')
-[ -z "$TEMP" ] && TEMP=$(sudo -n battopt status 2>/dev/null | grep -oE "[0-9.]+" | tail -3 | head -1)
+# BC: temperature from bc-status (read-only), never battopt.
+BC_OUT=""
+[ -x "$BC_BUILD_DIR/bc-status" ] && BC_OUT=$("$BC_BUILD_DIR/bc-status" 2>/dev/null)
+TEMP=$(echo "$BC_OUT" | grep '^TempBatteryPack:' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
 
 if [ -z "$TEMP" ]; then
-    warn "Temp: could not read (battopt may be restarting)"
+    warn "Temp: could not read (bc-status may have failed)"
 elif [ "${TEMP%.*}" -lt 40 ] 2>/dev/null; then
     check "Temp < 40°C" "yes" "yes"
 elif [ "${TEMP%.*}" -lt 45 ] 2>/dev/null; then
     warn "Temp = ${TEMP}°C (warm)"
 else
     warn "Temp = ${TEMP}°C (hot)"
+fi
+
+echo "" | tee -a "$REPORT"
+
+# ─── CALIBRATION ───
+echo "─── CALIBRATION ───" | tee -a "$REPORT"
+
+# Calibrate build (2026-11-14): a run is supervised by the watchdog;
+# its heartbeat must be <= 10 min old (the same staleness bound
+# bc-limit v1.3 applies to calibrate sessions). The anti-sleep
+# posture marker is expected only during the discharge leg.
+if [ -f "$DASH/.calibration_run" ]; then
+    CAL_HB=$(grep '^HEARTBEAT=' "$DASH/.calibration_run" 2>/dev/null | tail -1 | cut -d= -f2)
+    case "$CAL_HB" in ''|*[!0-9]*) CAL_HB=0 ;; esac
+    CAL_AGE=$(( $(date +%s) - CAL_HB ))
+    CAL_LEG=$(grep '^LEG=' "$DASH/.calibration_run" 2>/dev/null | tail -1 | cut -d= -f2)
+    if [ "$CAL_AGE" -le 600 ]; then
+        check "Calibration run active (leg ${CAL_LEG:-?}, heartbeat ${CAL_AGE}s old)" "yes" "yes"
+    else
+        warn "Calibration run heartbeat STALE (${CAL_AGE}s, leg ${CAL_LEG:-?}) — supervisor not ticking"
+    fi
+else
+    check "No calibration run active" "yes" "yes"
+fi
+if [ -f "$DASH/.calibration_posture_state" ]; then
+    check "Calibration posture active (anti-sleep asserted for the discharge leg)" "yes" "yes"
 fi
 
 echo "" | tee -a "$REPORT"
@@ -248,3 +357,5 @@ fi
 
 echo ""
 echo "Report: $REPORT"
+
+

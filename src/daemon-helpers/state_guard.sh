@@ -1,6 +1,17 @@
 #!/bin/bash
 # Shared active-session state; callers must hold the guard lock for mutations.
-SG_DIR="${SG_DIR:-$HOME/.battopt-swiftbar}"
+# BC state dir: ~/.battery-commander/ is the ONLY live state dir
+# (consolidation 2026-11-13, M2: the old-dir fallback is retired — the
+# pre-migration dir is a kept, inert backup, never a live target).
+# A caller-set SG_DIR wins (tests / dry-runs).
+if [ -n "${SG_DIR:-}" ]; then
+    : # keep the caller's SG_DIR
+elif [ -d "$HOME/.battery-commander" ]; then
+    SG_DIR="$HOME/.battery-commander"
+else
+    echo "ERROR: Battery Commander state dir missing - ~/.battery-commander not found (state_guard)" >&2
+    return 1 2>/dev/null || exit 1
+fi
 SG_LOCK="$SG_DIR/.state_guard.lock"
 SG_TOKEN="$SG_DIR/.active_token"
 SG_MODE="$SG_DIR/.active_mode"
@@ -10,7 +21,12 @@ guard_lock() {
     while ! mkdir "$SG_LOCK" 2>/dev/null; do
         owner=$(cat "$SG_LOCK/pid" 2>/dev/null)
         if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-            rm -rf "$SG_LOCK"
+            # Re-read: another process may have acquired the lock since
+            # we read the pid — only remove it if it still names the
+            # dead owner (audit 2026-11-11, W29).
+            if [ "$(cat "$SG_LOCK/pid" 2>/dev/null)" = "$owner" ]; then
+                rm -rf "$SG_LOCK"
+            fi
             continue
         fi
         tries=$((tries + 1))
