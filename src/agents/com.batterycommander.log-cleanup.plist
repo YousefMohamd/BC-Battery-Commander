@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.batterycommander.log-cleanup</string>
+    <key>ProgramArguments</key>
+    <array><string>@HOME@/.battery-commander/cleanup_logs.sh</string></array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>3</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+    <key>RunAtLoad</key><false/>
+    <key>StandardErrorPath</key><string>/tmp/batterycommander-cleanup.err</string>
+    <key>StandardOutPath</key><string>/tmp/batterycommander-cleanup.out</string>
+</dict>
+</plist>

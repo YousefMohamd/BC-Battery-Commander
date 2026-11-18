@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Battery Commander watchdog agent (W6.4). USER LaunchAgent, not a root
+     daemon: the watchdog never writes the SMC and never calls bc-limit
+     --write. It replaces the guardian + enforce_watchdog +
+     charge_upper_watcher + consolidated_checks agents (one 60 s agent;
+     the retired guardian/enforce/consolidated agents stay unloaded). The script is
+     copied to the state dir at deploy (like dispatch.sh).
+     Install by copying to
+     ~/Library/LaunchAgents/com.batterycommander.watchdog.plist AFTER
+     replacing @HOME@ with the user's actual home directory (the deploy
+     step does this substitution; launchd does not expand $HOME in
+     ProgramArguments). Installed at deploy; loaded as
+     com.batterycommander.watchdog. Stdout/stderr go to the
+     state-dir .watchdog.out/.watchdog.err (rotated by cleanup_logs.sh);
+     the watchdog's own log is .watchdog.log. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.batterycommander.watchdog</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@HOME@/.battery-commander/bc-watchdog.sh</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>60</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<false/>
+	<key>StandardOutPath</key>
+	<string>@HOME@/.battery-commander/.watchdog.out</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/.battery-commander/.watchdog.err</string>
+</dict>
+</plist>

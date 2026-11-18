@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Battery Commander watchdog-liveness sentinel (verification
+     deployment 2026-11-14). USER LaunchAgent: checks every 180 s
+     that the watchdog heartbeat (.watchdog.log) is fresh while the
+     Mac is awake; alerts once per incident if the watchdog dies
+     silently (the 2026-11-13/14 failure mode). The script is copied
+     to the state dir at deploy (like bc-watchdog.sh). Install by
+     copying to ~/Library/LaunchAgents/ AFTER replacing /Users/Yousef
+     with the user's actual home directory (the deploy step does this
+     substitution; launchd does not expand $HOME in
+     ProgramArguments). Stdout/stderr go to the state-dir
+     .watchdog_sentinel.out/.watchdog_sentinel.err. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.batterycommander.watchdogsentinel</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Users/Yousef/.battery-commander/bc-watchdog-sentinel.sh</string>
+	</array>
+	<key>StartInterval</key>
+	<integer>180</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<false/>
+	<key>StandardOutPath</key>
+	<string>/Users/Yousef/.battery-commander/.watchdog_sentinel.out</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/Yousef/.battery-commander/.watchdog_sentinel.err</string>
+</dict>
+</plist>

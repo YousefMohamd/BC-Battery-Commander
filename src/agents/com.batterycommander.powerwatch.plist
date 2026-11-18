@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Battery Commander powerwatch agent (W5.2). USER LaunchAgent, not a root
+     daemon: powerwatch needs no privilege. Install by copying to
+     ~/Library/LaunchAgents/com.batterycommander.powerwatch.plist AFTER
+     replacing @HOME@ with the user's actual home directory (the deploy
+     step does this substitution; launchd does not expand $HOME in
+     ProgramArguments). Installed at deploy; loaded as
+     com.batterycommander.powerwatch. Log paths are in the state
+     dir (a user agent cannot write to /var/log). The state-dir rename to
+     ~/.battery-commander/ landed in W6.3. -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>KeepAlive</key>
+	<true/>
+	<key>Label</key>
+	<string>com.batterycommander.powerwatch</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@HOME@/.battery-commander/powerwatch</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/.battery-commander/powerwatch.err</string>
+	<key>StandardOutPath</key>
+	<string>@HOME@/.battery-commander/powerwatch.log</string>
+</dict>
+</plist>
