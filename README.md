@@ -1,190 +1,81 @@
-# BattOpt Control Center
+<p align="center">
+  <img src="assets/battery-commander-logo.png" alt="Battery Commander" width="256">
+</p>
 
-A menu bar battery charge limiter and sleep optimizer for macOS 10.15+.
-Bridges the [battopt](https://battopt.buddha-path.top) CLI and
-[SwiftBar](https://github.com/swiftbar/SwiftBar) into a friendly menu bar
-control center with seven defense layers and self-healing logic.
+# Battery Commander
 
----
+A menu-bar battery charge limiter for Intel Macs — a fully independent, open
+implementation that holds your battery at the charge limit you choose.
 
-## What It Does
+## Who it's for
 
-- **Charge cap** — stops charging at 80-85% to extend battery lifespan.
-- **Sailing Mode** — oscillates between lower and upper bounds.
-- **Sleep Modes** — Normal / Presentation / Long Tasks / Travel.
-- **Power Modes** — Fast Sleep / Balanced / Always Awake / Deep Only.
-- **Smart Discharge** — drains the battery to a target percentage.
-- **Calibration** — periodic full-cycle for accurate percentage readings.
-- **Clamshell Control** — allow or block lid-closed operation.
-- **Auto Cleanup** — pauses Spotlight/Photos/Time Machine when idle.
-- **Proactive Alerts** — temperature, health, low battery.
-- **Sleep & Battery Report** — daily summary of wake reasons and drain.
-
----
+Owners of Intel MacBooks who want a charge limit to slow battery wear. Apple
+ships a built-in charge limit only on newer Macs and macOS versions; Intel Macs
+never received one. Battery Commander fills that gap on Intel hardware, using
+the SMC charge-control mechanism those machines expose.
 
 ## Requirements
 
-- macOS 10.15 Catalina or later (tested on MacBookPro9,1).
-- [SwiftBar](https://github.com/swiftbar/SwiftBar) 1.4 or later.
-- `battopt` CLI (installed separately).
-- `terminal-notifier` (bundled).
-- Xcode Command Line Tools (only to rebuild `powerwatch.c`).
+- An Intel Mac (charge control uses the Intel-era SMC `BCLM` key).
+- macOS 10.15 Catalina or later.
+- Designed and tested on a MacBook Pro (13-inch, Mid 2012, MacBookPro9,1)
+  running macOS 10.15.8. Other Intel models expose the same mechanism but are
+  not individually verified.
 
-### Installing battopt CLI
+## Features
 
-Follow the official instructions at <https://battopt.buddha-path.top>.
-Binary installed at `/Library/Application Support/battopt/battopt`.
+- **Charge limit with hold** — set an upper/lower pair (for example 86/85%):
+  charging stops at the top and resumes at the bottom. A small root daemon
+  enforces the limit by toggling the SMC hold state, and verifies every write
+  by read-back.
+- **Sailing mode** — optionally let the battery drift between the bounds
+  instead of pinning it at the top.
+- **Smart Discharge** — drain to a target percentage on demand, including
+  **on-AC discharge** (the battery discharges while the charger stays plugged
+  in), with supervised sessions and automatic return to the limit afterwards.
+- **Calibration support** — guided full-cycle calibration sessions with
+  safety floors selected by battery-health band and abort protection.
+- **Sleep & power profiles** — curated power profiles from the menu,
+  including Power Saver and Stay Awake options.
+- **Protection layers** — a temperature/load guard, gauge-jump confirmation
+  before any daemon write, overshoot correction, and a verification system
+  that scores real hold episodes and reports its own confidence.
+- **Native notifications** — posted by the app itself under its own identity;
+  no external notifier dependency.
+- **Clean quit** — quitting the app fully releases the limit (verified by
+  read-back) and returns the Mac to stock behaviour; relaunching resumes
+  enforcement.
 
-Verify:
+## Install
 
-    sudo battopt status
+1. Download `BatteryCommander-1.0.dmg` from the Releases page.
+2. Open the DMG and run **Install Battery Commander**.
+3. Battery Commander v1 is **unsigned** (no Apple Developer ID). If
+   Gatekeeper blocks the first open, right-click the app, choose **Open**,
+   and confirm.
 
----
+The installer never overwrites an existing installation's state. The daemon
+installs to a protected system location (`/Library/PrivilegedHelperTools/`),
+not to a user-writable folder.
 
-## Installation
+## Uninstall
 
-From the release DMG:
+Run the included uninstaller. It first releases the charge limit and verifies
+the release by read-back; if the release cannot be verified, it removes
+nothing and tells you why. Your state folder is kept unless you explicitly
+ask to purge it.
 
-1. Double-click `BattOpt-Installer.dmg`.
-2. Drag `BattOpt.app` to `/Applications`.
-3. Run the installer:
+## Limitations
 
-       sudo bash /Volumes/BattOpt/install.sh
-
-The installer copies helper scripts to `~/.battopt-swiftbar/`, installs
-LaunchAgents and LaunchDaemons, writes `/etc/sudoers.d/battopt-nopasswd`,
-and places the SwiftBar plugin in `~/SwiftBar/`.
-
----
-
-## Usage
-
-Click the battery icon in the menu bar. The dropdown is organized as:
-
-- **Header** — charge %, mode, health, temperature, trial days.
-- **Quick Actions** — Power Mode and Sleep Mode submenus.
-- **Charge Limits** — custom upper/lower, sailing toggle, gap size.
-- **Battery Care** — Calibration, Clamshell Mode, Schedule.
-- **System Resources** — CPU and RAM.
-- **Shutdown** — clean stop with auto-restore via BattOpt.app.
-
-All actions are one-click and idempotent.
-
----
-
-## Architecture
-
-    SwiftBar (menu bar UI)
-        │
-        ▼
-    battopt.30s.sh  ──► dispatch.sh  ──►  30 helper scripts
-        │                  │
-        │                  └──► battopt binary (SMC keys)
-        │
-        └──► state files (~/.battopt-swiftbar/)
-
-    powerwatch (C binary, root daemon)
-        └──► sleep/wake scripts
-
-    launchd — runs scheduled helpers every 1-60 minutes.
-
-The **battopt binary is third-party** and controls the SMC charge keys
-directly. This project wraps it; it does not replace it.
-
----
-
-## Seven Protection Layers
-
-1. **Input Validation & Persistence** — `.last_inputs`.
-2. **Emergency Stop & Audit** — `emergency-stop.sh` + `.audit.log`.
-3. **Auto-recovery** — `ensure_limit.sh` + `swiftbar_watchdog.sh`.
-4. **Strict Backup Snapshots** — timestamped copies before edits.
-5. **Self-Healing Daemon** — `self_healing.sh` every 5 minutes.
-6. **Guardian Heartbeat** — `guardian.sh` every 2 minutes.
-7. **Config Validator** — validates state files; auto-fixes safe corruption.
-
----
-
-## Configuration Files
-
-Runtime state lives in `~/.battopt-swiftbar/`.
-
-| File | Purpose |
-|------|---------|
-| `config` | User limits (LAST_UPPER, LAST_LOWER, SAILING, SAIL_GAP) |
-| `.sleep_mode` | `default` / `presentation` / `download` / `travel` |
-| `.current_power_mode` | `fast` / `balanced` / `awake` / `deep` / `custom` |
-| `.last_inputs` | Last dialog values |
-| `.status_cache` | Cached `battopt status` (10s TTL) |
-| `actions.log` | All user actions |
-| `.healing.log` | Self-healing interventions |
-| `.guardian.log` | Guardian heartbeat |
-
----
-
-## Troubleshooting
-
-### Menu bar shows an old percentage
-
-    rm -f ~/.battopt-swiftbar/.status_cache
-
-### "Charge limit is suspended"
-
-    sudo battopt limit 85 80
-
-### SwiftBar plugin disappears
-
-    ~/.battopt-swiftbar/launch_swiftbar.sh
-
-Or reopen `BattOpt.app`.
-
-### powerwatch not running
-
-    sudo launchctl list | grep powerwatch
-    sudo launchctl load -w /Library/LaunchDaemons/com.battopt.powerwatch.plist
-
-### Daemon not responding
-
-    sudo launchctl unload /Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist
-    sudo launchctl load -w /Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist
-
----
-
-## Uninstallation
-
-    sudo bash /Applications/BattOpt.app/Contents/Resources/uninstall.sh
-
-Or manually:
-
-    sudo launchctl unload /Library/LaunchDaemons/com.battopt.powerwatch.plist
-    sudo launchctl unload /Library/LaunchDaemons/com.buddha-path.BattOpt.daemon.plist
-    for p in ~/Library/LaunchAgents/com.battopt.*.plist; do launchctl unload "$p"; done
-    rm -rf ~/.battopt-swiftbar
-    rm -f ~/SwiftBar/battopt.30s.sh
-    sudo rm -f /etc/sudoers.d/battopt-nopasswd
-    rm -rf /Applications/BattOpt.app
-
----
+- **Unsigned v1** — Gatekeeper warns on first open (see Install above).
+- **Intel only** — Apple Silicon Macs use different charge-control keys and
+  are not supported by this release.
+- **One test-machine class** — developed and verified on a Mid-2012 MacBook
+  Pro under Catalina; behaviour on other Intel models or macOS versions may
+  differ.
+- While the Mac is asleep with the lid closed, the hold state stays as it was
+  when sleep began.
 
 ## License
 
-- Wrapper scripts, plugin, launcher: MIT (see `LICENSE`).
-- battopt binary: third-party, proprietary; not distributed here.
-- SwiftBar: MIT, separate project.
-- terminal-notifier: MIT, bundled separately.
-
----
-
-## Credits
-
-- Original design and development: Yousef.
-- Built on top of `battopt` by Buddha Path.
-- Uses SwiftBar by Jed Fox and contributors.
-- Notifications via terminal-notifier by Julien Blanchard.
-
-## Version
-
-Current: **v1.3.0**
-Release date: 2026-10-11
-Device tested: MacBookPro9,1 (MacBook Pro 15-inch mid-2012)
-macOS tested: 10.15.8 (Catalina, Build 19H2036)
+See [LICENSE](LICENSE).
