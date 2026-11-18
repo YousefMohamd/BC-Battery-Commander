@@ -23,6 +23,14 @@
 #   charging on AC       ⚡ grey (#707070)
 #   temp >= 42 C         red (#FF3B30); temp >= 38 C orange (#FF9500)
 #
+# Priority (Yousef ruling 2026-11-18): charger removal wins — a
+# session draining on battery shows 🔴, not 🔋. 🔋 is only for a
+# session on AC: EXT=Yes (cable path live), or the manager discharge
+# mode (DS_AC_MODE — EXT reads No there because the mode itself
+# drops the adapter path; the matching acengage marker is what
+# tells that shape apart from a removed charger). The discharge
+# colour #8A9AAB follows the same decision.
+#
 # Grey rule (W2.3 — the one documented rule): grey whenever IsCharging=Yes.
 # (The old plugin fallback used grey only when ChargingCurrent > 50; that
 # rule is dropped. Charging is charging regardless of the current.)
@@ -86,7 +94,13 @@ fi
 # monitor's state for THIS session is armed/active. An armed
 # session parked on AC is not draining (plug stands); battery
 # use with no session keeps the red circle.
+# Priority amendment (Yousef ruling 2026-11-18): DS_ACTIVE still
+# records "a session is draining", but the ICON and its colour now
+# follow the power source first — see the priority note in the
+# header table. DS_AC_MODE marks shape (1) (manager discharge mode
+# held by bc-limit = the session running ON AC).
 DS_ACTIVE=0
+DS_AC_MODE=0
 if [ -f "$DASH/.discharge_session" ]; then
     _DS_SESS_STARTED=$(grep '^STARTED=' "$DASH/.discharge_session" 2>/dev/null | tail -1 | cut -d= -f2)
     if [ -n "$_DS_SESS_STARTED" ]; then
@@ -96,6 +110,7 @@ if [ -f "$DASH/.discharge_session" ]; then
         fi
         if [ -n "$_DS_MARK_STARTED" ] && [ "$_DS_MARK_STARTED" = "$_DS_SESS_STARTED" ]; then
             DS_ACTIVE=1
+            DS_AC_MODE=1
         elif [ "$ICON_EXT" = "No" ] && [ -f "$DASH/.discharge_state" ]; then
             _DS_MON_STARTED=$(grep '^SESSION_STARTED=' "$DASH/.discharge_state" 2>/dev/null | tail -1 | cut -d= -f2)
             _DS_MON_PHASE=$(grep '^PHASE=' "$DASH/.discharge_state" 2>/dev/null | tail -1 | cut -d= -f2)
@@ -106,7 +121,8 @@ if [ -f "$DASH/.discharge_session" ]; then
         fi
     fi
 fi
-if [ "$DISPLAY_MODE" = "discharge" ] || [ "$DS_ACTIVE" = "1" ]; then
+if { [ "$DISPLAY_MODE" = "discharge" ] || [ "$DS_ACTIVE" = "1" ]; } && \
+   { [ "$ICON_EXT" = "Yes" ] || [ "$DS_AC_MODE" = "1" ]; }; then
     ICON="🔋"
 elif [ "$ICON_EXT" = "No" ] && [ "$ICON_ISCHG" = "No" ]; then
     ICON="🔴"
@@ -126,7 +142,8 @@ elif [ "$ICON_EXT" = "Yes" ] && [ "$ICON_ISCHG" = "No" ]; then
 else
     STATE_COLOR="color=#E8A0A0"
 fi
-if [ "$DISPLAY_MODE" = "discharge" ] || [ "$DS_ACTIVE" = "1" ]; then
+if { [ "$DISPLAY_MODE" = "discharge" ] || [ "$DS_ACTIVE" = "1" ]; } && \
+   { [ "$ICON_EXT" = "Yes" ] || [ "$DS_AC_MODE" = "1" ]; }; then
     FINAL_COLOR="color=#8A9AAB"
 elif [ -n "$TEMP_IN" ] && [ "$TEMP_IN" -ge 42 ] 2>/dev/null; then
     FINAL_COLOR="color=#FF3B30"
