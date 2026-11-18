@@ -76,3 +76,18 @@ config
 *.bak-*
 *.bak
 .aider*
+
+# ─────────────────────────────────────────────
+# Battery Commander cleanup 2026-11-18: local backups,
+# RE archive, identity package, working archive (never published)
+# ─────────────────────────────────────────────
+*.pre-*
+re-work/
+*.kra
+BatteryCommander-Identity/
+install_tools*.sh
+battopt-project/
+app/*.app/
+reports/
+.cleanup-manifest-20261118.txt
+cleanup_phase*.sh

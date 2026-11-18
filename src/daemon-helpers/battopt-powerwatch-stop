@@ -1,7 +1,0 @@
-#!/bin/bash
-# Runs as root via sudo NOPASSWD
-PLIST="/Library/LaunchDaemons/com.battopt.powerwatch.plist"
-launchctl unload "$PLIST" 2>/dev/null
-sleep 1
-pkill -9 -f "battopt-swiftbar/powerwatch" 2>/dev/null
-exit 0

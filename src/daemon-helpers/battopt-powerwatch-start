@@ -1,9 +1,0 @@
-#!/bin/bash
-# Runs as root via sudo NOPASSWD
-PLIST="/Library/LaunchDaemons/com.battopt.powerwatch.plist"
-if launchctl list 2>/dev/null | grep -q "com.battopt.powerwatch"; then
-    exit 0
-fi
-launchctl load -w "$PLIST" 2>/dev/null
-sleep 2
-exit 0
