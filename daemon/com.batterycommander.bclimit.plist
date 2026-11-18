@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Battery Commander — bc-limit root LaunchDaemon.
+     Runs bc-limit as root once every 60 s (periodic invocation, NOT a
+     long-running daemon). bc-limit enforces the charge limit by toggling
+     BCLM (10 = hold, 100 = resume) on this Mac; on other Macs it probes
+     the backend at runtime (see limit-writer-design.md v2).
+     NOTE: the binary path below is the build location
+     (battopt-project/bc-build/). For the published tool, the binary will
+     move to a standard install location (e.g. /usr/local/bin/bc-limit or
+     the app bundle) and this path must be updated.
+     W6.1: --config points at the canonical state-dir config
+     (@HOME@/.battery-commander/config); the state-dir migration
+     must run before install. @HOME@ is substituted with the actual
+     home at install time (launchd does not expand $HOME). The
+     daemon log lives in the state dir so cleanup_logs.sh rotates
+     it (W6.2).
+     WARNING: loading this daemon starts REAL enforcement (--write).
+     Loading = starting Phase C (the full cycle). Do not load without
+     Phase C approval. See launchdaemon-install.md. -->
+<dict>
+	<key>Label</key>
+	<string>com.batterycommander.bclimit</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@HOME@/Projects/BattOpt-CC-Release/battopt-project/bc-build/bc-limit</string>
+		<string>--config</string>
+		<string>@HOME@/.battery-commander/config</string>
+		<string>--write</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>@HOME@/Projects/BattOpt-CC-Release/battopt-project/bc-build</string>
+	<key>StartInterval</key>
+	<integer>60</integer>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<false/>
+	<key>StandardOutPath</key>
+	<string>@HOME@/.battery-commander/bc-limit-daemon.log</string>
+	<key>StandardErrorPath</key>
+	<string>@HOME@/.battery-commander/bc-limit-daemon.log</string>
+</dict>
+</plist>
