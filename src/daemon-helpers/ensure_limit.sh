@@ -24,7 +24,7 @@ else
 fi
 CONFIG="$DASH/config"
 LOG="$DASH/actions.log"
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
 BC_CANDIDATES="$BC_BUILD_DIR/bc-candidates"
 
 log() { echo "[$(date '+%H:%M:%S')] ensure_limit: $1" >> "$LOG"; }
@@ -59,9 +59,15 @@ case "$LAST_LOWER" in ''|*[!0-9]*) LAST_LOWER=85 ;; esac
 # "BCLM: size=1 type=ui8 bytes=0a value=10".)
 bc_read_bclm() {
     local _bin="$BC_CANDIDATES" _out _v
-    [ -x "$_bin" ] || return 1
-    _out=$("$_bin" 2>/dev/null) || return 1
-    _v=$(printf '%s\n' "$_out" | grep '^BCLM:' | grep -oE 'value=[0-9]+' | grep -oE '[0-9]+' | head -1)
+    if [ -x "$_bin" ]; then
+        _out=$("$_bin" 2>/dev/null) || _out=""
+        _v=$(printf '%s\n' "$_out" | grep '^BCLM:' | grep -oE 'value=[0-9]+' | grep -oE '[0-9]+' | head -1)
+        [ -n "$_v" ] && printf '%s' "$_v" && return 0
+    fi
+    # Fallback (2026-11-19 status-path fix): bc-candidates is a build-tree
+    # binary with no installed location; bc-status (state dir) reports
+    # the same BCLM read-only.
+    _v=$("$DASH/bc-status" 2>/dev/null | grep '^BCLM:' | grep -oE '[0-9]+' | head -1)
     [ -n "$_v" ] && printf '%s' "$_v" && return 0
     return 1
 }

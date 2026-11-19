@@ -14,7 +14,7 @@ else
     echo "ERROR: Battery Commander state dir missing - ~/.battery-commander not found; refusing to run (old-dir fallback retired)" >&2
     exit 1
 fi
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
 REPORT="/tmp/battery-commander_health_latest.txt"
 PASS=0
 FAIL=0
@@ -300,7 +300,7 @@ fi
 
 # BC: temperature from bc-status (read-only), never battopt.
 BC_OUT=""
-[ -x "$BC_BUILD_DIR/bc-status" ] && BC_OUT=$("$BC_BUILD_DIR/bc-status" 2>/dev/null)
+[ -x "$DASH/bc-status" ] && BC_OUT=$("$DASH/bc-status" 2>/dev/null)
 TEMP=$(echo "$BC_OUT" | grep '^TempBatteryPack:' | grep -oE '[0-9]+(\.[0-9]+)?' | head -1)
 
 if [ -z "$TEMP" ]; then

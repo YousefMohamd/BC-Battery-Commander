@@ -15,7 +15,7 @@ else
 fi
 LOG="$DASH/actions.log"
 DATA="$DASH/predictive_data"
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
 mkdir -p "$DATA"
 
 log() { echo "[$(date '+%H:%M:%S')] predict: $1" >> "$LOG"; }
@@ -36,7 +36,7 @@ echo "LOAD=$(sysctl -n vm.loadavg | awk '{print $2}')"
 echo "SWAP=$(sysctl vm.swapusage | awk '{print $7}' | tr -d 'M')"
 # BC: TEMP/HEALTH/CYCLES from bc-status (read-only), never battopt.
 BC_OUT=""
-[ -x "$BC_BUILD_DIR/bc-status" ] && BC_OUT=$("$BC_BUILD_DIR/bc-status" 2>/dev/null)
+[ -x "$DASH/bc-status" ] && BC_OUT=$("$DASH/bc-status" 2>/dev/null)
 echo "TEMP=$(echo "$BC_OUT" | grep '^TempBatteryPack:' | grep -oE '[0-9.]+' | head -1)"
 echo "BATT=$(pmset -g batt | grep -oE '[0-9]+%' | head -1 | tr -d '%')"
 echo "HEALTH=$(echo "$BC_OUT" | grep '^Health:' | grep -oE '[0-9.]+' | head -1)"

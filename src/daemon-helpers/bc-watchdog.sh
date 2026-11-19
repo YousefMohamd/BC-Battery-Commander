@@ -129,9 +129,15 @@ fi
 # The state dir must exist before any log/state write below (audit
 # 2026-11-11, W28 — a missing dir made log() fail silently on every tick).
 mkdir -p "$DASH" 2>/dev/null || true
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
-BC_LIMIT="$BC_BUILD_DIR/bc-limit"
-BC_STATUS="$BC_BUILD_DIR/bc-status"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
+# Runtime probes resolve to installed locations, never the build tree
+# (root-cause fix 2026-11-19: build-tree paths broke every status read
+# once the project moved -- "status unavailable"). bc-status lives in
+# the state dir; the daemon binary in the privileged helpers dir (DMG
+# installs) or the state dir's bin/ (pre-DMG layout).
+BC_STATUS="$DASH/bc-status"
+BC_LIMIT="/Library/PrivilegedHelperTools/bc-limit"
+[ -x "$BC_LIMIT" ] || BC_LIMIT="$DASH/bin/bc-limit"
 BC_CANDIDATES="$BC_BUILD_DIR/bc-candidates"
 LOG="$DASH/actions.log"
 WLOG="$DASH/.watchdog.log"
@@ -379,9 +385,15 @@ read_snapshot() {
 # (Same function as dispatch W1.1.)
 bc_read_bclm() {
     local _bin="$BC_CANDIDATES" _out _v
-    [ -x "$_bin" ] || return 1
-    _out=$("$_bin" 2>/dev/null) || return 1
-    _v=$(printf '%s\n' "$_out" | grep '^BCLM:' | grep -oE 'value=[0-9]+' | grep -oE '[0-9]+' | head -1)
+    if [ -x "$_bin" ]; then
+        _out=$("$_bin" 2>/dev/null) || _out=""
+        _v=$(printf '%s\n' "$_out" | grep '^BCLM:' | grep -oE 'value=[0-9]+' | grep -oE '[0-9]+' | head -1)
+        [ -n "$_v" ] && printf '%s' "$_v" && return 0
+    fi
+    # Fallback (2026-11-19 status-path fix): bc-candidates is a build-tree
+    # binary with no installed location; bc-status (state dir) reports
+    # the same BCLM read-only.
+    _v=$(bc_status_value BCLM 2>/dev/null) || _v=""
     [ -n "$_v" ] && printf '%s' "$_v" && return 0
     return 1
 }

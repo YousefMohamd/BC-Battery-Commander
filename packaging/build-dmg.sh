@@ -33,12 +33,12 @@ VOLNAME="Battery Commander 1.0"
 
 # The verified end-state (2026-11-18). The build refuses to package
 # anything else.
-EXPECT_APP_EXE=49d72add5e0150c0ff74519e96c2e980
+EXPECT_APP_EXE=a967ccaffa6ba3d91068116b6feb8857
 EXPECT_DAEMON_BIN=83297d730680bfada97da1eee22f4554
 EXPECT_DAEMON_SRC=441c61dc3c0da36ced9170470df5b9b4
 EXPECT_DISPLAY_STATE=784299079ca5b6f05c8fdb7fd53fe986
-EXPECT_DISPATCH=238616ec8faabcb5fe81dc77a6dd103c
-EXPECT_WATCHDOG=ae75ba3f6722903801de54faedb41c14
+EXPECT_DISPATCH=613fa220c5eff0e09aacef44136f52e2
+EXPECT_WATCHDOG=4bbec07c12603585afe181542b1c29be
 
 # The deployed helper set (state-dir scripts + powerwatch binary).
 # Deliberately excluded: swiftbar_watchdog.sh (retired with the

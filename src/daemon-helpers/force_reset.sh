@@ -31,8 +31,8 @@ else
     exit 1
 fi
 LOG="$DASH/actions.log"
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
-REPO="$HOME/Projects/BattOpt-CC-Release"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
+REPO="${REPO:-}"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') force_reset: $*" >> "$LOG"
@@ -40,7 +40,7 @@ log() {
 
 # 1. Re-verify readable state.
 BC_OUT=""
-[ -x "$BC_BUILD_DIR/bc-status" ] && BC_OUT=$("$BC_BUILD_DIR/bc-status" 2>/dev/null)
+[ -x "$DASH/bc-status" ] && BC_OUT=$("$DASH/bc-status" 2>/dev/null)
 BCLM_VAL=$(echo "$BC_OUT" | grep '^BCLM:' | grep -oE '[0-9]+' | head -1)
 PCT=$(echo "$BC_OUT" | grep '^Capacity:' | grep -oE '[0-9]+' | head -1)
 if [ -z "$BCLM_VAL" ]; then

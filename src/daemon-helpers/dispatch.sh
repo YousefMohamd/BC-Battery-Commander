@@ -17,11 +17,17 @@ fi
 mkdir -p "$DASH" 2>/dev/null || true
 # Battery Commander (BC) — the independent backend. The closed-source
 # battopt binary is GONE. The enforcer + read-only status binaries live in
-# the repo's bc-build dir until publish (the install step relocates them).
+# installed runtime locations (state dir / privileged helpers).
 # BC_BUILD_DIR can be overridden in the environment.
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
-BC_LIMIT="$BC_BUILD_DIR/bc-limit"
-BC_STATUS="$BC_BUILD_DIR/bc-status"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
+# Runtime probes resolve to installed locations, never the build tree
+# (root-cause fix 2026-11-19: build-tree paths broke every status read
+# once the project moved -- "status unavailable"). bc-status lives in
+# the state dir; the daemon binary in the privileged helpers dir (DMG
+# installs) or the state dir's bin/ (pre-DMG layout).
+BC_STATUS="$DASH/bc-status"
+BC_LIMIT="/Library/PrivilegedHelperTools/bc-limit"
+[ -x "$BC_LIMIT" ] || BC_LIMIT="$DASH/bin/bc-limit"
 BC_CANDIDATES="$BC_BUILD_DIR/bc-candidates"
 LOG="$DASH/actions.log"
 LOCK="$DASH/.op.lock"
@@ -121,9 +127,15 @@ get_pct() {
 # bc-candidates prints one line per key: "BCLM: size=1 type=ui8 bytes=0a value=10".
 bc_read_bclm() {
     local _bin="$BC_CANDIDATES" _out _v
-    [ -x "$_bin" ] || return 1
-    _out=$("$_bin" 2>/dev/null) || return 1
-    _v=$(printf '%s\n' "$_out" | grep '^BCLM:' | grep -oE 'value=[0-9]+' | grep -oE '[0-9]+' | head -1)
+    if [ -x "$_bin" ]; then
+        _out=$("$_bin" 2>/dev/null) || _out=""
+        _v=$(printf '%s\n' "$_out" | grep '^BCLM:' | grep -oE 'value=[0-9]+' | grep -oE '[0-9]+' | head -1)
+        [ -n "$_v" ] && printf '%s' "$_v" && return 0
+    fi
+    # Fallback (2026-11-19 status-path fix): bc-candidates is a build-tree
+    # binary with no installed location; bc-status (state dir) reports
+    # the same BCLM read-only.
+    _v=$(bc_status_value BCLM 2>/dev/null) || _v=""
     [ -n "$_v" ] && printf '%s' "$_v" && return 0
     return 1
 }
@@ -2890,7 +2902,7 @@ AS
             echo ""
             echo "## BC Daemon Log (last 50)"
             echo '```'
-            tail -50 "$DASH/bc-limit-daemon.log" 2>/dev/null || tail -50 "$BC_BUILD_DIR/bc-limit-daemon.log" 2>/dev/null || echo "no bc-limit daemon log yet (daemon not loaded - Phase C gate)"
+            tail -50 "$DASH/bc-limit-daemon.log" 2>/dev/null || echo "no bc-limit daemon log yet (daemon not loaded - Phase C gate)"
             echo '```'
             echo ""
             echo "## Wake Events (last 20)"
@@ -2933,7 +2945,7 @@ AS
         ;;
 
     logs_daemon)
-        open "$BC_BUILD_DIR" 2>/dev/null || open "$DASH" 2>/dev/null
+        open "$DASH" 2>/dev/null
         ;;
 
     logs_reports)

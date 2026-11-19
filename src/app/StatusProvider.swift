@@ -166,10 +166,12 @@ enum StatusProvider {
 
         // --- bc-status (plugin: 20 s .status_cache TTL; app reads a
         // fresh cache, otherwise runs bc-status itself — no writes).
-        let bcBuildDir = ProcessInfo.processInfo.environment["BC_BUILD_DIR"]
-            ?? (fm.homeDirectoryForCurrentUser.path as NSString)
-                .appendingPathComponent("Projects/BattOpt-CC-Release/battopt-project/bc-build")
-        let bcStatusPath = (bcBuildDir as NSString).appendingPathComponent("bc-status")
+        // bc-status resolves from the runtime state dir, never from a
+        // build tree (root-cause fix 2026-11-19: the old default pointed
+        // into the developer's project folder, so any machine without
+        // that exact tree — including this one after the project moved —
+        // showed "status unavailable").
+        let bcStatusPath = (dash as NSString).appendingPathComponent("bc-status")
         var bcOut = ""
         let cachePath = (dash as NSString).appendingPathComponent(".status_cache")
         if let age = fileAgeSeconds(cachePath), age < 20, let cached = readFile(cachePath), !cached.isEmpty {
@@ -595,7 +597,8 @@ enum StatusProvider {
         // cleanup 2026-11-18). One `ps` snapshot, classified by
         // command path: the app bundle, the bc-limit daemon binary,
         // and every process running out of the state dir (powerwatch,
-        // watchdog + helper scripts) or the build dir's bc-status.
+        // watchdog + helper scripts, bc-status) or the installed
+        // daemon binary (PrivilegedHelperTools on DMG installs).
         // RSS is summed per class; %CPU is ps's own instantaneous
         // figure summed the same way. Labelled as the tool's
         // footprint — nothing else on the machine is counted.
@@ -622,8 +625,7 @@ enum StatusProvider {
             if cmd.contains("BatteryCommander.app/") {
                 appCpu += cpu; appRss += rss
             } else if cmd.contains(".battery-commander/")
-                        || cmd.contains("/bc-build/bc-limit ") || cmd.hasSuffix("/bc-build/bc-limit")
-                        || cmd.contains("/bc-build/bc-status ") || cmd.hasSuffix("/bc-build/bc-status") {
+                        || cmd.contains("/PrivilegedHelperTools/bc-limit ") || cmd.hasSuffix("/PrivilegedHelperTools/bc-limit") {
                 bgCpu += cpu; bgRss += rss
             }
         }

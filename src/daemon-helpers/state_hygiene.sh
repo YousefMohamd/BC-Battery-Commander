@@ -16,7 +16,7 @@ else
     exit 1
 fi
 LOG="$DASH/.hygiene.log"
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
 
 log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG"; }
 
@@ -190,7 +190,7 @@ if [ -f "$DASH/.active_mode" ]; then
                     # read via bc-status (read-only). Unreadable
                     # -> preserve (never clear on a read failure).
                     BC_OUT=""
-                    [ -x "$BC_BUILD_DIR/bc-status" ] && BC_OUT=$("$BC_BUILD_DIR/bc-status" 2>/dev/null)
+                    [ -x "$DASH/bc-status" ] && BC_OUT=$("$DASH/bc-status" 2>/dev/null)
                     BCLM_VAL=$(echo "$BC_OUT" | grep '^BCLM:' | grep -oE '[0-9]+' | head -1)
                     if [ -z "$BCLM_VAL" ]; then
                         : # bc-status down — leave hold; watchdog LAYER8 resolves

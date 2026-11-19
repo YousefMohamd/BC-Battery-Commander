@@ -23,8 +23,8 @@ else
     echo "ERROR: Battery Commander state dir missing - ~/.battery-commander not found; refusing to run (old-dir fallback retired)" >&2
     exit 1
 fi
-BC_BUILD_DIR="${BC_BUILD_DIR:-$HOME/Projects/BattOpt-CC-Release/battopt-project/bc-build}"
-BC_STATUS="$BC_BUILD_DIR/bc-status"
+BC_BUILD_DIR="${BC_BUILD_DIR:-}"
+BC_STATUS="$DASH/bc-status"
 LOG="$DASH/maintenance.log"; exec >> "$LOG" 2>&1
 FAIL_REASON=""
 # Guard: respect shutdown
