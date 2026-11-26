@@ -1318,8 +1318,22 @@ AS
         sudo -n /usr/bin/pmset -a disablesleep 0 || SM_FAIL=1
         # Battery defaults
         $DASH/power_saver.sh enforce-sleep-policy || SM_FAIL=1
-        # AC defaults — restore normal sleep timing
-        sudo -n /usr/bin/pmset -c sleep 120 || SM_FAIL=1
+        # AC defaults — restore normal sleep timing. Conflict fix
+        # 2026-11-26: the AC sleep timer belongs to the active power
+        # profile when one is applied — restore it instead of the
+        # hardcoded default. Power Saver's timer was already set by
+        # enforce-sleep-policy above.
+        _pm_owner=$(cat "$DASH/.current_power_mode" 2>/dev/null | tr -d '[:space:]')
+        case "$_pm_owner" in
+            fast|balanced|awake|deep)
+                "$DASH/power_mode.sh" "$_pm_owner" >/dev/null 2>&1 || SM_FAIL=1
+                ;;
+            powersaver)
+                ;;
+            *)
+                sudo -n /usr/bin/pmset -c sleep 120 || SM_FAIL=1
+                ;;
+        esac
         sudo -n /usr/bin/pmset -c displaysleep 20 || SM_FAIL=1
         sudo -n /usr/bin/pmset -c disksleep 0 || SM_FAIL=1
         sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null || SM_FAIL=1

@@ -109,7 +109,19 @@ apply_delays() {
     _ps -c standbydelaylow "$ac_low"
     _ps -c autopoweroffdelay "$ac_auto"
     _ps -c standbydelay "$ac_high"
-    _ps -c sleep "$ac_sleep"
+    # Conflict fix 2026-11-26: the AC sleep timer belongs to the active
+    # power profile when one is applied. Set it only when Power Saver /
+    # the default delay profile owns the power policy.
+    local _pm_owner
+    _pm_owner=$(cat "$DASH/.current_power_mode" 2>/dev/null | tr -d '[:space:]')
+    case "$_pm_owner" in
+        fast|balanced|awake|deep|custom)
+            log "apply_delays: AC sleep timer owned by profile=$_pm_owner - leaving it"
+            ;;
+        *)
+            _ps -c sleep "$ac_sleep"
+            ;;
+    esac
     _ps -c disksleep 10
 
     log "apply_delays: profile=$profile battery=$battery_high/$battery_low/$battery_auto ac=$ac_high/$ac_low/$ac_auto sleep=$ac_sleep"
@@ -151,6 +163,12 @@ case "$1" in
     on)
         [ -f "$DASH/.user_shutdown" ] && exit 0
         log "power_saver: ON"
+        # Conflict fix 2026-11-26: record Power Saver as the power-policy
+        # owner BEFORE applying its values, so apply_delays (called via
+        # enforce_sleep_policy below) knows the AC sleep timer is Power
+        # Saver's to set. Rolled back if any pmset call fails.
+        _prev_owner=$(cat "$DASH/.current_power_mode" 2>/dev/null | tr -d '[:space:]')
+        printf '%s\n' "powersaver" > "$DASH/.current_power_mode.tmp.$$" && mv "$DASH/.current_power_mode.tmp.$$" "$DASH/.current_power_mode"
         ARCH=$(uname -m)
         _ps -a powernap 0
         _ps -a womp 0
@@ -167,6 +185,13 @@ case "$1" in
         _ps -a autopoweroff 1
         if [ "$PMSET_FAILED" -ne 0 ]; then
             log "power_saver: ON FAILED — not writing ENABLED flag"
+            # Roll the ownership record back (see the note at the top
+            # of this branch): Power Saver did not become the owner.
+            if [ -n "$_prev_owner" ]; then
+                printf '%s\n' "$_prev_owner" > "$DASH/.current_power_mode.tmp.$$" && mv "$DASH/.current_power_mode.tmp.$$" "$DASH/.current_power_mode"
+            else
+                rm -f "$DASH/.current_power_mode"
+            fi
             echo "Power Saver: FAILED to enable (pmset error — see actions.log)" >&2
             exit 1
         fi
@@ -196,6 +221,10 @@ case "$1" in
             exit 1
         fi
         rm -f "$FLAG"
+        # Conflict fix 2026-11-26: Power Saver no longer owns the policy.
+        if [ "$(cat "$DASH/.current_power_mode" 2>/dev/null | tr -d '[:space:]')" = "powersaver" ]; then
+            rm -f "$DASH/.current_power_mode"
+        fi
         echo "Power Saver: DISABLED"
         ;;
     status)

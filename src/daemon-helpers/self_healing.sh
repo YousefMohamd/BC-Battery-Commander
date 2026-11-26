@@ -22,6 +22,21 @@ HEAL_LOG="$DASH/.healing.log"
 
 log() { echo "[$(date '+%H:%M:%S')] heal: $1" >> "$HEAL_LOG"; }
 
+# Conflict fix 2026-11-26: after a fault reset touched pmset, converge
+# back to the user's active power policy instead of factory defaults.
+reapply_power_owner() {
+    local _o
+    _o=$(cat "$DASH/.current_power_mode" 2>/dev/null | tr -d '[:space:]')
+    case "$_o" in
+        fast|balanced|awake|deep)
+            "$DASH/power_mode.sh" "$_o" >/dev/null 2>&1 && log "re-applied power profile '$_o' after pmset reset"
+            ;;
+        powersaver)
+            "$DASH/power_saver.sh" on >/dev/null 2>&1 && log "re-applied power saver after pmset reset"
+            ;;
+    esac
+}
+
 # S5: Hard early exit - never undo a user-intended shutdown
 if [ -f "$DASH/.user_shutdown" ]; then
     log "shutdown flag present - exiting"
@@ -86,6 +101,7 @@ if ! echo "$VALID_MODES" | grep -qw "$CURRENT_MODE"; then
     sudo -n /usr/bin/pmset -b standbydelayhigh 600
     sudo -n /usr/bin/pmset -b autopoweroffdelay 1800
     sudo -n /usr/bin/pmset -a disablesleep 0 2>/dev/null
+    reapply_power_owner
 fi
 
 
@@ -96,6 +112,7 @@ if [ "$CURRENT_MODE" = "download" ] || [ "$CURRENT_MODE" = "presentation" ]; the
         printf "%s\n" "default" > "$DASH/.sleep_mode.tmp.$$" && mv "$DASH/.sleep_mode.tmp.$$" "$DASH/.sleep_mode"
         sudo -n /usr/bin/pmset -c sleep 120
         sudo -n /usr/bin/pmset -c displaysleep 20
+        reapply_power_owner
     fi
 fi
 

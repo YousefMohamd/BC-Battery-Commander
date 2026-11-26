@@ -112,6 +112,15 @@ apply_profile() {
     printf '%s\n' "$profile" > "$MODE_FILE.tmp.$$" || fail "could not write mode state"
     mv "$MODE_FILE.tmp.$$" "$MODE_FILE" || fail "could not save mode state"
 
+    # Single-owner rule (conflict fix 2026-11-26): a user-applied power
+    # profile supersedes Power Saver. Clear its flag so the background
+    # enforcers (arm_sleep, pmset_check, adaptive) stop re-asserting
+    # Power Saver values over this profile.
+    if [ -f "$DASH/.power_saver" ]; then
+        rm -f "$DASH/.power_saver"
+        log "power_saver: superseded by profile=$profile (flag cleared)"
+    fi
+
     log "applied profile=$profile sleep=${sleep_minutes}m standby=${standby_seconds}s hibernatemode=${hibernate_mode}"
     echo "Power Mode: $profile"
 }

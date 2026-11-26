@@ -77,8 +77,9 @@ struct Snapshot {
     var verificationSummary: String? = nil
 
     // pmset sections
-    var pmSleepBat = "?", pmDisplayBat = "?", pmDiskBat = "?", pmHibBat = "?", pmSleepAC = "?"
+    var pmSleepBat = "?", pmDisplayBat = "?", pmDiskBat = "?", pmHibBat = "?", pmSleepAC = "?", pmStandbyBat = "?"
     var powerModeName = "Custom", powerModeKey = "custom", powerUseWhen = "manual values"
+    var powerModeFromFile = false
     var sleepModeState = "default", sleepModeTitle = "Normal"
 
     // Charge/session items
@@ -364,6 +365,34 @@ enum StatusProvider {
             s.verificationSummary = v
         }
 
+        // Power-policy owner file (conflict fix, 2026-11-26): the label
+        // comes from the tool's own record of what was applied last —
+        // power_mode.sh writes the profile name, power_saver.sh writes
+        // "powersaver", and choosing a profile supersedes Power Saver.
+        // The pmset inference in the full collect is only a fallback
+        // for when the file is absent.
+        if let owner = readFileStripped((dash as NSString).appendingPathComponent(".current_power_mode")) {
+            switch owner {
+            case "fast":
+                s.powerModeName = "Fast Sleep"; s.powerModeKey = "fast"; s.powerUseWhen = "leaving office"
+            case "balanced":
+                s.powerModeName = "Balanced"; s.powerModeKey = "balanced"; s.powerUseWhen = "daily use"
+            case "awake":
+                s.powerModeName = "Always Awake"; s.powerModeKey = "awake"; s.powerUseWhen = "presentations"
+            case "deep":
+                s.powerModeName = "Deep Only"; s.powerModeKey = "deep"; s.powerUseWhen = "travel / storage"
+            case "custom":
+                s.powerModeName = "Custom"; s.powerModeKey = "custom"; s.powerUseWhen = "manual values"
+            case "powersaver":
+                s.powerModeName = "Power Saver"; s.powerModeKey = "powersaver"; s.powerUseWhen = "battery saving"
+            default:
+                break
+            }
+            if s.powerModeKey != "custom" || owner == "custom" {
+                s.powerModeFromFile = true
+            }
+        }
+
         s.isFull = full
         if !full {
             // Light collect (perf fix, 2026-11-26): the 10 s timer
@@ -391,22 +420,32 @@ enum StatusProvider {
                 case "displaysleep": if s.pmDisplayBat == "?" { s.pmDisplayBat = val }
                 case "disksleep": if s.pmDiskBat == "?" { s.pmDiskBat = val }
                 case "hibernatemode": if s.pmHibBat == "?" { s.pmHibBat = val }
+                case "standbydelayhigh": if s.pmStandbyBat == "?" { s.pmStandbyBat = val }
                 default: break
                 }
             } else if section == "ac" && key == "sleep" {
                 if s.pmSleepAC == "?" { s.pmSleepAC = val }
             }
         }
-        if s.pmSleepBat == "5" && s.pmDisplayBat == "5" {
-            s.powerModeName = "Fast Sleep"; s.powerModeKey = "fast"; s.powerUseWhen = "leaving office"
-        } else if s.pmSleepBat == "18" && s.pmDisplayBat == "10" {
-            s.powerModeName = "Balanced"; s.powerModeKey = "balanced"; s.powerUseWhen = "daily use"
-        } else if s.pmSleepBat == "60" && s.pmDisplayBat == "15" {
-            s.powerModeName = "Always Awake"; s.powerModeKey = "awake"; s.powerUseWhen = "presentations"
-        } else if s.pmSleepBat == "0" && s.pmHibBat == "25" {
-            s.powerModeName = "Deep Only"; s.powerModeKey = "deep"; s.powerUseWhen = "travel / storage"
-        } else {
-            s.powerModeName = "Custom"; s.powerModeKey = "custom"; s.powerUseWhen = "manual values"
+        if !s.powerModeFromFile {
+            // Fallback inference, aligned with the values power_mode.sh
+            // actually applies (conflict fix, 2026-11-26): fast = sleep
+            // 5 / standby 300 / hib 25; deep = sleep 5 / standby 0 /
+            // hib 25; awake = sleep 0 / hib 3; balanced = sleep 18 /
+            // hib 3. (The old table expected sleep 60 for awake and
+            // displaysleep values no profile ever sets, so it could
+            // only ever guess wrong.)
+            if s.pmHibBat == "25" && s.pmSleepBat == "5" && s.pmStandbyBat != "0" && s.pmStandbyBat != "?" {
+                s.powerModeName = "Fast Sleep"; s.powerModeKey = "fast"; s.powerUseWhen = "leaving office"
+            } else if s.pmHibBat == "25" && (s.pmSleepBat == "5" || s.pmSleepBat == "0") {
+                s.powerModeName = "Deep Only"; s.powerModeKey = "deep"; s.powerUseWhen = "travel / storage"
+            } else if s.pmSleepBat == "0" && s.pmHibBat == "3" {
+                s.powerModeName = "Always Awake"; s.powerModeKey = "awake"; s.powerUseWhen = "presentations"
+            } else if s.pmSleepBat == "18" && s.pmHibBat == "3" {
+                s.powerModeName = "Balanced"; s.powerModeKey = "balanced"; s.powerUseWhen = "daily use"
+            } else {
+                s.powerModeName = "Custom"; s.powerModeKey = "custom"; s.powerUseWhen = "manual values"
+            }
         }
 
         // --- Sleep mode state file.

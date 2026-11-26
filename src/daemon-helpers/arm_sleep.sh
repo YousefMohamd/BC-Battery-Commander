@@ -92,14 +92,14 @@ case "$SLEEP_MODE" in
     *) APPLY_PROFILE=default ;;
 esac
 log "Sleep profile: ${SLEEP_PROFILE:-?} mode: ${SLEEP_MODE:-?} -> delays: $APPLY_PROFILE"
-if [ -f "$DASH/.power_saver" ]; then
-    "$DASH/power_saver.sh" on
-    "$DASH/power_saver.sh" apply-delays "$APPLY_PROFILE"
-    log "Applied sleep delay profile: $APPLY_PROFILE"
-else
-    "$DASH/power_saver.sh" off
-    log "Power Saver disabled; restored standard sleep settings"
-fi
+# Conflict fix 2026-11-26: sleep preparation must NOT re-assert or
+# restore Power Saver. The active power-policy owner (a user-applied
+# profile, or Power Saver itself) already set hibernatemode and the
+# feature flags; re-asserting here stomped the user's profile at every
+# sleep (hibernatemode 25 + AC sleep timer over Always Awake).
+# arm_sleep only applies the sleep-session standby delays.
+"$DASH/power_saver.sh" apply-delays "$APPLY_PROFILE"
+log "Applied sleep delay profile: $APPLY_PROFILE"
 
 # 1. Quiet audio apps — graceful quit first, kill only if still running.
 # Never kill unconditionally: quit is a polite request (the app can finish
