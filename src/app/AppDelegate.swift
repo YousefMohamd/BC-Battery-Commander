@@ -33,6 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var lastGood: Snapshot? = nil
     private var housekeepingOutcome: Housekeeping.Outcome? = nil
     private var consecutiveStatusFailures = 0
+    private var collectBusy = false
+    private var tickCount = 0
+    private var menuWasDegraded = false
     private var currentMenu: NSMenu?
 
     // MARK: Bench log
@@ -77,9 +80,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let button = statusItem.button {
             button.title = "⏳ …"
         }
-        refresh()
+        refresh(full: true)
         timer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
-            self?.refresh()
+            guard let strongSelf = self else { return }
+            strongSelf.tickCount += 1
+            // Perf fix (2026-11-26): light collect on the 10 s
+            // cadence; a full census every 30th tick (5 min) keeps
+            // the menu data fresh without paying for it 6x/minute.
+            strongSelf.refresh(full: strongSelf.tickCount % 30 == 0)
         }
     }
 
@@ -118,7 +126,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: Refresh pipeline
 
-    func refresh() {
+    func refresh(full: Bool = false) {
+        // Perf fix (2026-11-26): never queue a second collect
+        // behind a running one. A slow census (pmset -g log,
+        // system_profiler) used to stack snapshots on the serial
+        // queue until the backlog drained, spiking CPU and RAM.
+        if collectBusy { return }
+        collectBusy = true
         collectQueue.async { [weak self] in
             // Drain the script notification queue first (final
             // cleanup 2026-11-18): helpers append title<TAB>body
@@ -127,8 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let dash = StatusProvider.dashPath {
                 Notifier.drain(dash: dash) { msg in self?.benchLog(msg) }
             }
-            let snap = StatusProvider.collect()
+            let snap = StatusProvider.collect(full: full)
             DispatchQueue.main.async {
+                self?.collectBusy = false
                 self?.apply(snap)
             }
         }
@@ -166,11 +181,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     .font: NSFont.systemFont(ofSize: 14),
                 ])
         }
-        let nodes = MenuModel.build(from: snap)
-        installMenu(nodes)
+        // Perf fix (2026-11-26): light snapshots update the title
+        // only — rebuilding the whole NSMenu every 10 s was pure
+        // waste. The menu is rebuilt on full snapshots, at launch
+        // (no menu yet), and when recovering from the degraded menu.
+        if snap.isFull || currentMenu == nil || menuWasDegraded {
+            menuWasDegraded = false
+            let nodes = MenuModel.build(from: snap)
+            installMenu(nodes)
+        }
     }
 
     private func presentDegraded() {
+        menuWasDegraded = true
         if let button = statusItem.button {
             // §9: dimmed logo glyph + "--%".
             if let iconPath = Bundle.main.path(forResource: "Battery Commander", ofType: "icns"),
@@ -249,7 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let node = ref.node
         if let special = node.special {
             switch special {
-            case "refresh": refresh()
+            case "refresh": refresh(full: true)
             case "quit":
                 // FR-007: write the closed flag FIRST, then exit —
                 // the daemon performs the release (read-back
@@ -276,7 +299,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sender.isEnabled = false
         Shell.launch(dispatch, [action]) { [weak self] status in
             self?.benchLog("action \(action) exited status=\(status)")
-            DispatchQueue.main.async { self?.refresh() }
+            DispatchQueue.main.async { self?.refresh(full: true) }
         }
     }
 
@@ -284,7 +307,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         // FR-002: refresh on menu open (async; the timer keeps the
-        // snapshot ≤ 10 s old in the meantime).
-        refresh()
+        // snapshot ≤ 10 s old in the meantime). Full census, so the
+        // menu the user is looking at converges to fresh data.
+        refresh(full: true)
     }
 }

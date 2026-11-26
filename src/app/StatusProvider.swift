@@ -33,6 +33,7 @@ struct Snapshot {
     // Environment
     var dash: String = ""
     var stateDirMissing = false
+    var isFull = false                   // perf fix 2026-11-26: full census vs light title-only collect
     var dispatchPath: String = ""
     var dispatchExists = false
 
@@ -126,7 +127,7 @@ enum StatusProvider {
         return FileManager.default.fileExists(atPath: d) ? d : nil
     }
 
-    static func collect() -> Snapshot {
+    static func collect(full: Bool = true) -> Snapshot {
         var s = Snapshot()
         let fm = FileManager.default
         guard let dash = dashPath else {
@@ -363,6 +364,17 @@ enum StatusProvider {
             s.verificationSummary = v
         }
 
+        s.isFull = full
+        if !full {
+            // Light collect (perf fix, 2026-11-26): the 10 s timer
+            // needs only the title/mode data collected above. The
+            // menu-only census below (pmset sections, daemon-log
+            // parse, launchctl + process table) runs on full
+            // collects only: launch, menu open, after an action,
+            // and every 30th timer tick.
+            return s
+        }
+
         // --- pmset -g custom (power mode determination).
         let pmsetCustom = Shell.run("/usr/bin/pmset", ["-g", "custom"]).stdout
         var section = ""
@@ -539,8 +551,9 @@ enum StatusProvider {
         // --- BC limit daemon liveness (from its own log, as the plugin).
         let daemonLogPath = (dash as NSString).appendingPathComponent("bc-limit-daemon.log")
         if fm.fileExists(atPath: daemonLogPath) {
-            let log = readFile(daemonLogPath) ?? ""
-            let stateLines = log.components(separatedBy: "\n").filter { $0.contains("state:") }
+            let log = readFileTail(daemonLogPath, maxBytes: 1048576) ?? ""
+            let allLines = log.components(separatedBy: "\n")
+            let stateLines = allLines.filter { $0.contains("state:") }
             if let last = stateLines.last {
                 let ts = firstCapture("^\\[([0-9-]+ [0-9:]+)\\]", in: last) ?? ""
                 let tsValid = ts.range(of: "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$",
@@ -560,8 +573,7 @@ enum StatusProvider {
                 dfDay.locale = Locale(identifier: "en_US_POSIX")
                 dfDay.dateFormat = "yyyy-MM-dd"
                 let today = dfDay.string(from: Date())
-                let writes = log.components(separatedBy: "\n")
-                    .filter { $0.contains(today) && $0.contains("WRITE:") }.count
+                let writes = allLines.filter { $0.contains(today) && $0.contains("WRITE:") }.count
                 let dMode = dChg == "1" ? "charging" : (dBclm == "10" ? "holding" : "idle")
                 if epoch > 0 && age <= 180 {
                     s.daemonLines = [

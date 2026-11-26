@@ -105,6 +105,30 @@ func readFile(_ path: String) -> String? {
     return try? String(contentsOfFile: path, encoding: .utf8)
 }
 
+/// Read at most the LAST `maxBytes` bytes of a file as UTF-8
+/// (perf fix, 2026-11-26). Used for the ever-growing daemon log:
+/// the app only ever needs the newest state lines and today's
+/// WRITE count, so parsing the whole multi-MB file on every
+/// refresh was pure waste. The first partial line of the window
+/// is dropped so callers never see a truncated record.
+func readFileTail(_ path: String, maxBytes: Int) -> String? {
+    guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+    defer { handle.closeFile() }
+    let end = handle.seekToEndOfFile()
+    if end <= UInt64(maxBytes) {
+        handle.seek(toFileOffset: 0)
+        let data = handle.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)
+    }
+    handle.seek(toFileOffset: end - UInt64(maxBytes))
+    let data = handle.readDataToEndOfFile()
+    guard var text = String(data: data, encoding: .utf8) else { return nil }
+    if let nl = text.firstIndex(of: "\n") {
+        text = String(text[text.index(after: nl)...])
+    }
+    return text
+}
+
 /// `$(cat file)` semantics: contents with trailing newlines stripped,
 /// nil when the file cannot be read.
 func readFileStripped(_ path: String) -> String? {
@@ -128,3 +152,4 @@ func splitFirst(_ s: String, _ sep: String) -> (head: String, tail: String)? {
     guard let r = s.range(of: sep) else { return nil }
     return (String(s[..<r.lowerBound]), String(s[r.upperBound...]))
 }
+
